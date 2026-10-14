@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .auth import token_hash, audit
 from .database import get_db
 from .models import Appointment, BookingAccess
+from .schemas import RescheduleInput
 
 router = APIRouter(prefix="/api/public/reservation", tags=["Customer portal"])
 Db = Annotated[Session, Depends(get_db)]
@@ -60,17 +61,13 @@ def cancel(db: Db, authorization: Annotated[str | None, Header()] = None):
     return appointment_data(appointment)
 
 
-from .booking import RescheduleInput
-
-
 @router.post("/reschedule")
 def reschedule(data: RescheduleInput, db: Db, authorization: Annotated[str | None, Header()] = None):
     # Use the same lock ordering and validations as an internal reschedule.
-    from .booking import reschedule_appointment
-    from .models import User
+    from .booking import reschedule_booking
     appointment = access(db, authorization)
     ensure_editable(appointment)
     appointment_id = appointment.id
     db.rollback()
     # Authorization is the single-appointment access grant, never a user-provided id.
-    return reschedule_appointment(appointment_id, data, db, User(role="reception"), customer=True)
+    return reschedule_booking(appointment_id, data, db, customer=True)

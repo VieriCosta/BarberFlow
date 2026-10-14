@@ -71,6 +71,7 @@ class Appointment(Base):
     status: Mapped[str] = mapped_column(String(20), default="scheduled", nullable=False)
     service: Mapped[Service] = relationship()
     professional: Mapped[Professional] = relationship()
+    payment: Mapped["Payment | None"] = relationship(uselist=False)
     __table_args__ = (CheckConstraint("starts_at < ends_at"),)
 
 

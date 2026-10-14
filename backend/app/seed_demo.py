@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+from contextlib import closing
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -152,10 +153,11 @@ def main() -> None:
         database = Path(engine.url.database).resolve()
         if database.exists():
             backup = database.with_name(f"{database.stem}.backup-{datetime.now(timezone.utc):%Y%m%d-%H%M%S-%f}.db")
-            with sqlite3.connect(database) as source, sqlite3.connect(backup) as destination:
+            with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(backup)) as destination:
                 source.backup(destination)
             print(f"Backup criado: {backup.name}")
-    Base.metadata.create_all(engine)
+    from .migrations import migrate
+    migrate()
     with SessionLocal() as db:
         counts = seed_demo(db)
     print("Dados Demo adicionados: " + ", ".join(f"{key}={value}" for key, value in counts.items()))

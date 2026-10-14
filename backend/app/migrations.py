@@ -1,6 +1,7 @@
 """Versioned, additive migrations for SQLite and PostgreSQL. Run before serving."""
 from datetime import datetime, timezone
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from sqlalchemy import inspect, text
 from .database import Base, engine
@@ -14,7 +15,7 @@ def migrate(target=engine):
     if 3 not in versions and target.dialect.name == "sqlite" and "appointments" in existing and target.url.database not in (None, ":memory:"):
         path = Path(target.url.database).resolve()
         backup = path.with_name(f"{path.stem}.backup-migrate-{datetime.now(timezone.utc):%Y%m%d-%H%M%S-%f}.db")
-        with sqlite3.connect(path) as source, sqlite3.connect(backup) as destination:
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(backup)) as destination:
             source.backup(destination)
     with target.begin() as connection:
         if target.dialect.name == "postgresql":

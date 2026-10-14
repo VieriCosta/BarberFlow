@@ -53,6 +53,10 @@ def current_user(db: Db, authorization: Annotated[str | None, Header()] = None) 
     user = db.get(User, session.user_id)
     if user is None or not user.active:
         raise HTTPException(401, "Usuário inativo")
+    if user.role == "barber":
+        professional = db.get(Professional, user.professional_id) if user.professional_id else None
+        if professional is None or not professional.active:
+            raise HTTPException(401, "Profissional inativo; contate a administração")
     return user
 
 
@@ -114,7 +118,7 @@ def add_user(data: UserInput, db: Session) -> User:
 @router.post("/bootstrap", status_code=201)
 def bootstrap(data: UserInput, db: Db, bootstrap_key: Annotated[str | None, Header()] = None):
     expected = os.getenv("BARBERFLOW_BOOTSTRAP_KEY", "")
-    if not expected or not bootstrap_key or not hmac.compare_digest(expected, bootstrap_key):
+    if not expected or expected == "gere-uma-chave-aleatoria-longa" or not bootstrap_key or not hmac.compare_digest(expected, bootstrap_key):
         raise HTTPException(403, "Chave de configuração inválida")
     # PostgreSQL advisory lock also covers the empty-table first-user race.
     from sqlalchemy import text

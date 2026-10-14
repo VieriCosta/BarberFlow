@@ -53,7 +53,8 @@ def appointment_data(appointment: Appointment) -> dict:
             "service_name": appointment.service_name, "professional_id": appointment.professional_id,
             "professional_name": appointment.professional.name, "customer_name": appointment.customer_name,
             "customer_phone": appointment.customer_phone, "starts_at": start.astimezone(ZONE).isoformat(),
-            "ends_at": end.astimezone(ZONE).isoformat(), "customer_id": appointment.customer_id, "price": str(appointment.price), "status": appointment.status}
+            "ends_at": end.astimezone(ZONE).isoformat(), "customer_id": appointment.customer_id, "price": str(appointment.price),
+            "status": appointment.status, "paid": appointment.payment is not None}
 
 
 def block_data(block: ScheduleBlock) -> dict:
@@ -249,7 +250,7 @@ def list_appointments(db: Db, day: date = Query(default_factory=lambda: datetime
                       view: Literal["day", "week"] = "day", professional_id: int | None = None, *, actor: Actor):
     professional_id = professional_scope(actor, professional_id)
     start, end = agenda_range(day, view)
-    query = select(Appointment).options(selectinload(Appointment.professional)).where(
+    query = select(Appointment).options(selectinload(Appointment.professional), selectinload(Appointment.payment)).where(
         and_(Appointment.starts_at >= start, Appointment.starts_at < end)).order_by(Appointment.starts_at)
     if professional_id is not None:
         query = query.where(Appointment.professional_id == professional_id)
@@ -338,8 +339,13 @@ def delete_block(block_id: int, db: Db, actor: Actor):
 
 
 @app.post("/api/appointments/{appointment_id}/reschedule")
-def reschedule_appointment(appointment_id: int, data: RescheduleInput, db: Db, actor: Actor, customer: bool = False):
-    professional_scope(actor, data.professional_id)
+def reschedule_appointment(appointment_id: int, data: RescheduleInput, db: Db, actor: Actor):
+    return reschedule_booking(appointment_id, data, db, actor=actor)
+
+
+def reschedule_booking(appointment_id: int, data: RescheduleInput, db: Session, actor=None, customer=False):
+    if actor:
+        professional_scope(actor, data.professional_id)
     begin_write(db)
     professional = db.scalar(select(Professional).options(selectinload(Professional.services),
         selectinload(Professional.work_periods)).where(Professional.id == data.professional_id).with_for_update())
@@ -349,7 +355,8 @@ def reschedule_appointment(appointment_id: int, data: RescheduleInput, db: Db, a
                             .with_for_update().execution_options(populate_existing=True))
     if appointment is None:
         raise HTTPException(404, "Agendamento não encontrado")
-    professional_scope(actor, appointment.professional_id)
+    if actor:
+        professional_scope(actor, appointment.professional_id)
     if customer:
         from .customer_portal import ensure_editable
         ensure_editable(appointment)
@@ -362,7 +369,7 @@ def reschedule_appointment(appointment_id: int, data: RescheduleInput, db: Db, a
     start, end = validate_booking_time(data.starts_at, duration)
     if not is_available(db, professional, start, end, exclude_appointment_id=appointment.id):
         raise HTTPException(409, "Horário indisponível; escolha outro horário")
-    audit(db, "appointment.reschedule", appointment.id, actor)
+    audit(db, "customer.reschedule" if customer else "appointment.reschedule", appointment.id, actor)
     appointment.professional_id = professional.id
     appointment.starts_at = start.astimezone(timezone.utc)
     appointment.ends_at = end.astimezone(timezone.utc)
