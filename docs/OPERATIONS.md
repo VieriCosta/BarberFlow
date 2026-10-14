@@ -1,22 +1,25 @@
 # Operação e recuperação
 
-## Primeiro acesso
+## Entrada de clientes e cadastro de donos
 
-`node scripts/configure-env.cjs` gera a chave de configuração em `.env`, sem mostrar os segredos no terminal. Copie `BARBERFLOW_BOOTSTRAP_KEY` para o formulário de primeiro acesso e crie o administrador. Após essa criação, a rota de configuração retorna conflito; novos usuários devem ser criados por um administrador autenticado.
+A página inicial é um diretório de barbearias publicadas. Clientes escolhem o espaço e agendam sem entrar na área interna. Abaixo da lista, **Cadastrar minha barbearia** cria um espaço vazio e uma conta de administrador própria, em uma única transação. O novo espaço começa em configuração e aparece na lista após o dono cadastrar catálogo/jornada e publicar em **Configurações**.
 
-O login retorna um token opaco e uma sessão de 8 horas. O frontend guarda a sessão apenas na aba atual. Logout, redefinição de senha e desativação revogam as sessões no servidor. Uma conta de barbeiro precisa estar associada a um profissional ativo.
+A equipe entra por **Sou da equipe** dentro da barbearia escolhida, por link direto ou pelo código informado pelo administrador. Código e link ficam em **Configurações**. Cada conta pertence a uma barbearia, e a mesma identificação de usuário pode ser usada em espaços diferentes.
+
+Os dados anteriores pertencem à barbearia inicial. Para assumir esse espaço quando ainda não houver administrador, use o formulário de primeiro acesso da equipe com a chave de `.env`. O cadastro público de um novo negócio não usa essa chave. `node scripts/configure-env.cjs` prepara as variáveis de infraestrutura sem mostrar segredos no terminal.
 
 ## Migrações
 
-O histórico está em `schema_migrations`. As versões são aditivas:
+O histórico está em `schema_migrations`. As versões preservam os registros existentes:
 
 | Versão | Alteração |
 | --- | --- |
 | 1 | Tabelas de acesso, financeiro, auditoria, expediente e notificações; vínculo por `customer_id` e preenchimento do histórico pelo telefone existente |
 | 2 | Limites persistentes de login e recuperação de trabalhos interrompidos na fila |
 | 3 | Geração de notificação para manter a mesma chave de idempotência durante tentativas de envio |
+| 4 | Diretório de barbearias, vínculo dos registros por `shop_id` e unicidade de telefone/usuário/fechamento dentro de cada espaço |
 
-SQLite cria uma cópia antes de mudar de versão. PostgreSQL aplica as alterações em transação, sob um bloqueio exclusivo de migração. O comando `python -m app.migrations` usa o mesmo banco configurado para a API. Uma falha impede a inicialização; verifique o erro e o backup antes de alterar o esquema manualmente.
+SQLite cria uma cópia antes de mudar de versão. A versão 4 reconstrói tabelas com unicidade global antiga, preservando IDs, dados e relacionamentos. PostgreSQL aplica as alterações em transação, sob um bloqueio exclusivo de migração. O comando `python -m app.migrations` usa o mesmo banco configurado para a API. Uma falha impede a inicialização; verifique o erro e o backup antes de alterar o esquema manualmente.
 
 ## Backup PostgreSQL
 
@@ -62,6 +65,8 @@ Payload do webhook:
   "version": "identificador-da-geracao",
   "kind": "confirmation",
   "appointment_id": 10,
+  "shop_id": 1,
+  "shop_name": "Nome da barbearia",
   "phone": "telefone-do-cliente",
   "email": "cliente@example.com",
   "message": "Detalhes do atendimento"
@@ -83,3 +88,9 @@ Ao contar o caixa, informe o dinheiro dos movimentos registrados, sem o fundo de
 ## Revisão das alterações
 
 A branch `feat/barberflow-management` parte do commit que preserva o projeto inicial em `main`. Os commits agrupam autenticação/migrações, agendamento/portal/notificações, financeiro, interface, infraestrutura e testes/documentação. O PR deve apontar para `main`; nenhum merge ou deploy é automático.
+
+## Separação entre barbearias
+
+As rotas internas ficam sob `/api/shops/{shop_id}`. A API valida a sessão nesse espaço e limita consultas, relacionamentos e alterações ao seu `shop_id`. Tokens de reserva também são limitados ao espaço do atendimento. O diretório público exibe apenas perfil e localização dos espaços publicados.
+
+O worker de notificações é um processo de infraestrutura que atende a fila de todos os espaços; não é uma sessão de usuário. Os backups abrangem todo o banco, incluindo todas as barbearias. A carga Demo só atua no espaço inicial.

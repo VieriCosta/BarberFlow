@@ -1,6 +1,6 @@
 # BarberFlow
 
-Gestão de barbearia com Angular e FastAPI, PostgreSQL no Docker e SQLite para desenvolvimento local. Inclui agendamento online, área da equipe com login, financeiro, painel de gestão e acesso protegido do cliente à própria reserva.
+Plataforma de barbearias com entrada voltada ao cliente: escolha uma barbearia, veja serviços e horários e agende seu corte. Donos podem cadastrar um espaço independente, configurar a equipe e publicar sua barbearia na lista. Angular e FastAPI, PostgreSQL no Docker e SQLite para desenvolvimento local.
 
 ## Primeira execução
 
@@ -9,9 +9,11 @@ Requisitos: Node.js 24.15.0+, Docker Compose ou Python 3.13.
 1. Na raiz, execute `node scripts/configure-env.cjs`. O comando prepara o `.env`, gera os segredos que faltam e preserva credenciais existentes.
 2. Execute `docker compose up --build -d`. A API, PostgreSQL e backup diário são iniciados.
 3. Em `frontend`, execute `npm ci` e `npm start`.
-4. Abra http://localhost:4200. No formulário da equipe, escolha **Primeiro acesso: configurar barbearia**.
-5. Use o valor de `BARBERFLOW_BOOTSTRAP_KEY` do seu `.env` e crie o administrador com senha de pelo menos 12 caracteres. A configuração inicial só pode ser usada uma vez.
-6. Em **Serviços**, cadastre o catálogo. Em **Profissionais**, cadastre os barbeiros e salve suas jornadas. Em **Configurações**, crie as contas da equipe.
+4. Abra http://localhost:4200. A tela inicial mostra as barbearias publicadas, com busca por nome ou cidade. O cliente escolhe uma delas para agendar, sem precisar entrar na área da equipe.
+5. Para criar um negócio, clique em **Cadastrar minha barbearia**, abaixo de **Quer colocar sua barbearia no ar?**. Informe os dados do espaço e crie seu usuário de administrador. Esse cadastro não exige a chave de configuração.
+6. Sua barbearia começa vazia e em configuração. Em **Serviços**, cadastre o catálogo. Em **Profissionais**, cadastre os barbeiros e salve suas jornadas.
+7. Em **Configurações**, marque **Publicar minha barbearia na lista dos clientes** e salve. É necessário ter um serviço ativo e um profissional com jornada. Depois disso, ela aparece como opção na entrada.
+8. Crie as contas da equipe e compartilhe o código ou link de acesso disponível em **Configurações**. Também é possível escolher a barbearia e usar **Sou da equipe**.
 
 A documentação da API fica em http://localhost:8000/docs. As rotas internas exigem o token retornado pelo login.
 
@@ -35,6 +37,8 @@ Sem `DATABASE_URL`, o banco é `backend/barberflow.db`. Dados e reservas existen
 | Recepção | Agenda da equipe, clientes, pagamentos, despesas e painel; sem gestão de usuários, catálogo ou fechamento |
 | Barbeiro | Própria agenda, reservas de balcão, bloqueios e ações dos próprios atendimentos |
 | Cliente | Catálogo público, agendamento e gestão de uma reserva por link protegido |
+
+Cada barbearia possui catálogo, profissionais, clientes, reservas, financeiro, usuários e auditoria próprios. As consultas são limitadas pela barbearia na URL, e um token de equipe só funciona no seu espaço. Telefones de clientes e nomes de usuário podem se repetir em barbearias diferentes.
 
 As permissões são verificadas na API. Sessões duram 8 horas e são revogadas no logout, na troca de senha ou na desativação da conta. Login tem limite persistente de tentativas. Senhas usam scrypt e somente hashes dos tokens ficam no banco.
 
@@ -76,11 +80,11 @@ Para SQLite, execute em `backend`:
 
 O comando usa a API de backup do SQLite, verifica integridade e mantém os últimos 14 arquivos. Sem `--interval`, faz um único backup.
 
-A API aplica migrações aditivas versionadas na inicialização. SQLite recebe backup antes de uma mudança de versão. PostgreSQL usa bloqueio para impedir migrações simultâneas. Para executar manualmente: `python -m app.migrations`. Não há downgrade destrutivo automático; restaure um backup em outro banco para recuperação.
+A API aplica migrações versionadas com preservação dos registros na inicialização. A versão 4 vincula os dados anteriores à barbearia inicial e adapta as regras de unicidade para cada espaço. No SQLite, essa etapa reconstrói as tabelas de clientes, usuários e fechamento quando necessário, preservando os IDs e os registros. SQLite recebe backup antes de uma mudança de versão. PostgreSQL usa bloqueio para impedir migrações simultâneas. Para executar manualmente: `python -m app.migrations`. Não há downgrade destrutivo automático; restaure um backup em outro banco para recuperação.
 
 ## Dados fictícios
 
-Execute `python -m app.seed_demo` em `backend`, ou `docker compose exec api python -m app.seed_demo`. A carga cria serviços, profissionais, clientes, reservas e bloqueios marcados como Demo, preservando os dados existentes. Ela não cria contas nem envia notificações para os contatos fictícios.
+Execute `python -m app.seed_demo` em `backend`, ou `docker compose exec api python -m app.seed_demo`. A carga cria serviços, profissionais, clientes, reservas e bloqueios marcados como Demo, preservando os dados existentes. Ela pertence apenas à barbearia inicial e não preenche os negócios cadastrados pelos donos. Não cria contas nem envia notificações para os contatos fictícios. Uma instalação vazia não publica automaticamente uma barbearia sem equipe; os dados Demo precisam ser carregados explicitamente.
 
 ## Testes
 
@@ -100,11 +104,17 @@ O Playwright inicia API e frontend próprios, com banco temporário e contas exc
 
 ## Organização e PR
 
-- `backend/app`: autenticação, schemas, catálogo, agendamentos, financeiro, expediente, portal, notificações, migrações e backup.
-- `frontend/src/app`: componentes de login, cadastros, grade de agenda, painel, financeiro, configurações e reserva do cliente.
+- `backend/app`: diretório/cadastro de barbearias, isolamento por espaço, autenticação, schemas, catálogo, agendamentos, financeiro, expediente, portal, notificações, migrações e backup.
+- `frontend/src/app`: escolha de barbearia, cadastro do dono, perfil/publicação do espaço, login da equipe, cadastros, grade de agenda, painel, financeiro, configurações e reserva do cliente.
 - `main`: versão inicial preservada.
 - `feat/barberflow-management`: melhorias em commits por etapa; destino do PR é `main`.
 
 Para disponibilizar a aplicação fora da máquina local, configure um domínio com HTTPS e os endereços do frontend em `BARBERFLOW_CORS_ORIGINS`. Tokens de sessão e links de reserva precisam de transporte protegido.
 
 Os componentes usam atualização explícita compatível com o estado atual da aplicação e Angular 22. Referência: [estratégias de detecção de mudanças](https://angular.dev/api/core/ChangeDetectionStrategy).
+
+## Compatibilidade com os dados anteriores
+
+Os registros anteriores ficam na barbearia inicial. Dados Demo aparecem como **Barbearia BarberFlow (Demo)**. Se ainda não houver administrador nesse espaço, escolha essa barbearia, abra **Sou da equipe** e use **Primeiro acesso: configurar barbearia** com a chave `BARBERFLOW_BOOTSTRAP_KEY`. Esse fluxo existe para assumir o espaço anterior; os novos negócios usam o cadastro público de dono. Links antigos de reserva continuam apontando para a barbearia inicial.
+
+As rotas de serviços, agenda, usuários e financeiro usam `/api/shops/{shop_id}/...`. O diretório e o cadastro de donos usam `/api/public/barbershops`. Links de cliente e equipe carregam a barbearia no fragmento da URL.
