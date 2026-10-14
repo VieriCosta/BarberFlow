@@ -1,0 +1,233 @@
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand" aria-label="BarberFlow">
+      <span class="brand-mark" aria-hidden="true"><span class="brand-mark-cut"></span>BF</span>
+      <div class="brand-name"><strong>barber<span>flow</span></strong><small>STUDIO SYSTEM / 01</small></div>
+    </div>
+
+    <div class="nav-group">
+      <span class="nav-label">NAVEGAR</span>
+      <nav aria-label="Navegação principal">
+        <button type="button" [class.active]="tab === 'entry'" [attr.aria-current]="tab === 'entry' ? 'page' : null" (click)="setTab('entry')"><span class="nav-index">00</span><span>Início</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button type="button" [class.active]="tab === 'booking'" [attr.aria-current]="tab === 'booking' ? 'page' : null" (click)="setTab('booking')"><span class="nav-index">01</span><span>Agendar horário</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button type="button" [class.active]="tab === 'agenda'" [attr.aria-current]="tab === 'agenda' ? 'page' : null" (click)="setTab('agenda')"><span class="nav-index">02</span><span>Agenda</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button type="button" [class.active]="tab === 'services'" [attr.aria-current]="tab === 'services' ? 'page' : null" (click)="setTab('services')"><span class="nav-index">03</span><span>Serviços</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button type="button" [class.active]="tab === 'professionals'" [attr.aria-current]="tab === 'professionals' ? 'page' : null" (click)="setTab('professionals')"><span class="nav-index">04</span><span>Profissionais</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button type="button" [class.active]="tab === 'customers'" [attr.aria-current]="tab === 'customers' ? 'page' : null" (click)="setTab('customers')"><span class="nav-index">05</span><span>Clientes</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+      </nav>
+    </div>
+
+    <div class="sidebar-statement" aria-hidden="true"><span>EST. 2026</span><strong>Seu estilo<br><em>tem hora.</em></strong><div class="statement-rule"></div><small>O tempo certo para cuidar de você.</small></div>
+    <div class="sidebar-footer"><span class="live-dot"></span> SISTEMA ATIVO <span>© 2026</span></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <span class="topbar-location">BARBERFLOW <span class="topbar-slash">/</span> {{ tab === 'entry' ? 'INÍCIO' : tab === 'booking' ? 'AGENDAMENTO' : tab === 'agenda' ? 'AGENDA' : tab === 'services' ? 'SERVIÇOS' : tab === 'professionals' ? 'PROFISSIONAIS' : 'CLIENTES' }}</span>
+      <div class="topbar-right"><span class="topbar-status"><span class="live-dot"></span> AGENDA ONLINE</span><span class="topbar-edition">EDIÇÃO 01 — 2026</span></div>
+    </header>
+
+    <div class="content">
+      @if (error) { <div class="alert error" role="alert"><span class="alert-symbol">!</span><span>{{ error }}</span><button type="button" (click)="error = ''" aria-label="Fechar aviso">×</button></div> }
+      @if (notice) { <div class="alert success" role="status"><span class="alert-symbol">✓</span><span>{{ notice }}</span><button type="button" (click)="notice = ''" aria-label="Fechar aviso">×</button></div> }
+
+      @if (tab === 'entry') {
+        <div class="page-enter entry-page">
+          <section class="entry-hero"><div class="hero-grain" aria-hidden="true"></div><span class="hero-kicker"><span class="kicker-line"></span> BARBERFLOW / BEM-VINDO</span><h1>O seu lugar<br><em>começa aqui.</em></h1><p>Agende seu horário ou entre na barbearia como profissional.</p><span class="entry-hero-mark" aria-hidden="true">✳</span></section>
+          <div class="entry-grid">
+            <section class="card entry-card customer-entry"><span class="mini-label">01 / CLIENTE</span><h2>Reserve seu momento.</h2><p>Escolha o serviço, o barbeiro e o horário que combina com você.</p><button type="button" class="primary-button" (click)="setTab('booking')"><span>Agendar horário</span><span class="button-arrow">↗</span></button></section>
+            <section class="card entry-card team-entry-card"><span class="mini-label">02 / EQUIPE</span><h2>Entre na barbearia.</h2><p>Escolha seu nome para abrir sua agenda e os cadastros da equipe.</p>
+              @if (loadingProfessionals) { <div class="empty-state">Carregando barbeiros...</div> }
+              @else if (hasActiveProfessionals()) { <div class="team-choices" role="group" aria-label="Escolha o barbeiro">
+                @for (professional of professionals; track professional.id) { @if (professional.active) { <button type="button" class="team-choice" [class.selected]="choiceProfessionalId === professional.id" (click)="choiceProfessionalId = professional.id"><span class="team-choice-avatar">{{ professional.name.slice(0, 1).toUpperCase() }}</span><span class="team-choice-copy"><strong>{{ professional.name }}</strong><small>{{ professional.service_ids.length }} serviço(s) · {{ professional.work_periods.length }} turno(s)</small></span><span aria-hidden="true">↗</span></button> } }
+              </div><button type="button" class="primary-button" [disabled]="!choiceProfessionalId" (click)="enterAsProfessional()"><span>Entrar como barbeiro</span><span class="button-arrow">↗</span></button> }
+              @else { <div class="entry-empty-team"><span class="empty-glyph">◌</span><strong>A equipe começa com você.</strong><span>Cadastre um serviço e o primeiro barbeiro.</span></div><button type="button" class="primary-button" (click)="choiceProfessionalId = -1; enterAsProfessional()"><span>Configurar barbearia</span><span class="button-arrow">↗</span></button> }
+            </section>
+          </div>
+        </div>
+      } @else if (tab === 'booking') {
+        <div class="page-enter">
+          <section class="hero" aria-labelledby="booking-title">
+            <div class="hero-grain" aria-hidden="true"></div>
+            <div class="hero-copy">
+              <div class="hero-kicker"><span class="kicker-line"></span> BARBEARIA NO SEU RITMO</div>
+              <h1 id="booking-title">O seu tempo.<br><em>O seu estilo.</em></h1>
+              <p>Escolha o ritual, encontre seu momento e deixe o resto com a gente.</p>
+              <div class="hero-footer"><span>AGENDAMENTO ONLINE</span><span class="hero-footer-line"></span><span>01 / 03</span></div>
+            </div>
+            <div class="hero-art" aria-hidden="true">
+              <div class="hero-art-orbit orbit-one"></div><div class="hero-art-orbit orbit-two"></div>
+              <div class="hero-art-disc"><div class="disc-inner"><span class="disc-star">✳</span><svg viewBox="0 0 160 160" fill="none" aria-hidden="true"><circle cx="40" cy="121" r="17" stroke="currentColor" stroke-width="8"/><circle cx="120" cy="121" r="17" stroke="currentColor" stroke-width="8"/><path d="M52 108L126 22M108 108L34 22" stroke="currentColor" stroke-width="8" stroke-linecap="round"/><path d="M34 22L73 68M126 22L87 68" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg><span class="disc-caption">CRAFTED WITH TIME</span></div></div>
+              <span class="hero-art-number">01</span>
+            </div>
+          </section>
+
+          <div class="booking-progress" aria-label="Etapas do agendamento">
+            <div class="progress-item" [class.current]="bookingStep === 1" [class.complete]="bookingStep > 1"><span>01</span><strong>O serviço</strong><i></i></div>
+            <div class="progress-item" [class.current]="bookingStep === 2" [class.complete]="bookingStep > 2"><span>02</span><strong>O momento</strong><i></i></div>
+            <div class="progress-item" [class.current]="bookingStep === 3" [class.complete]="bookingStep > 3"><span>03</span><strong>Seus dados</strong><i></i></div>
+          </div>
+
+          <div class="booking-layout">
+            <section class="card booking-card" aria-label="Formulário de agendamento">
+              @if (confirmed) {
+                <div class="booking-success" role="status"><span class="confirmation-icon" aria-hidden="true">✓</span><span class="mini-label">RESERVA #{{ confirmed.id }}</span><h2>Seu horário está confirmado.</h2><p>{{ confirmed.service_name }} com {{ confirmed.professional_name }}</p><strong>{{ formatDay(confirmed.starts_at) }} às {{ formatTime(confirmed.starts_at) }}</strong><p>Até {{ formatTime(confirmed.ends_at) }} · {{ confirmed.price | currency:'BRL' }}</p><button type="button" class="primary-button" (click)="startNewBooking()"><span>Fazer outro agendamento</span><span class="button-arrow">↗</span></button><button type="button" class="text-button" (click)="setTab('entry')">Voltar ao início</button></div>
+              } @else {
+              @if (loadingServices) { <p class="hint" role="status">Carregando serviços...</p> }
+              @else if (!hasActiveServices()) { <div class="empty-state"><strong>Os serviços ainda estão sendo preparados</strong><span>Volte mais tarde para reservar seu atendimento.</span></div> }
+              <div class="section-title" [class.step-active]="bookingStep === 1"><span class="step">01</span><div><span class="section-overline">COMECE POR AQUI</span><h2>Escolha seu atendimento</h2><p>Um bom corte começa com uma boa escolha.</p></div></div>
+              <div class="field-grid">
+                <label class="field">Serviço
+                  <select [disabled]="saving || loadingServices" [(ngModel)]="booking.service_id" (ngModelChange)="onServiceChange()">
+                    <option [ngValue]="0">Selecione um serviço</option>
+                    @for (service of services; track service.id) { @if (service.active) { <option [ngValue]="service.id">{{ service.name }} · {{ service.duration_minutes }} min · {{ service.price | currency:'BRL' }}</option> } }
+                  </select>
+                </label>
+                <label class="field">Profissional
+                  <select [disabled]="saving || !booking.service_id || loadingProfessionals" [(ngModel)]="booking.professional_id" (ngModelChange)="onBookingChange()">
+                    <option [ngValue]="0">Qualquer disponível</option>
+                    @for (professional of professionals; track professional.id) { @if (professional.active && professional.service_ids.includes(booking.service_id)) { <option [ngValue]="professional.id">{{ professional.name }}</option> } }
+                  </select>
+                </label>
+              </div>
+
+              <div class="divider"><span>✳</span></div>
+              <div class="section-title" [class.step-active]="bookingStep === 2"><span class="step">02</span><div><span class="section-overline">NO SEU TEMPO</span><h2>Encontre seu horário</h2><p>Mostramos os horários que realmente estão livres.</p></div></div>
+              <label class="field date-field">Data do atendimento<input type="date" [disabled]="saving" [(ngModel)]="booking.day" [min]="today" (ngModelChange)="onBookingChange()"></label>
+              @if (booking.service_id) {
+                <div class="slots-label"><span>HORÁRIOS DISPONÍVEIS</span><span class="slots-count">{{ loadingSlots ? 'CONSULTANDO' : slots.length + ' OPÇÕES' }}</span></div>
+                @if (loadingSlots) {
+                  <div class="slot-grid" aria-label="Carregando horários"><div class="slot-skeleton"></div><div class="slot-skeleton"></div><div class="slot-skeleton"></div><div class="slot-skeleton"></div></div>
+                } @else if (slotsError) {
+                  <div class="empty-state" role="alert"><strong>Não foi possível consultar os horários</strong><span>{{ slotsError }}</span><button type="button" class="text-button" (click)="onBookingChange()">Tentar novamente</button></div>
+                } @else if (slots.length) {
+                  <div class="slot-grid">
+                    @for (slot of slots; track slot.starts_at + slot.professional_id) {
+                      <button type="button" class="slot" [style.animationDelay]="($index < 8 ? $index * 35 : 280) + 'ms'" [class.selected]="selectedSlot?.starts_at === slot.starts_at && selectedSlot.professional_id === slot.professional_id" [attr.aria-pressed]="selectedSlot?.starts_at === slot.starts_at && selectedSlot.professional_id === slot.professional_id" (click)="selectSlot(slot)"><strong>{{ formatTime(slot.starts_at) }}</strong><small>{{ slot.professional_name }}</small></button>
+                    }
+                  </div>
+                } @else { <div class="empty-state"><span class="empty-glyph" aria-hidden="true">◌</span><strong>Nenhum horário por aqui</strong><span>Tente outra data ou escolha qualquer profissional.</span></div> }
+              } @else { <div class="empty-state"><span class="empty-glyph" aria-hidden="true">◌</span><strong>Seu próximo horário aparece aqui</strong><span>Selecione um serviço para começar.</span></div> }
+
+              <div class="divider"><span>✳</span></div>
+              <div class="section-title" [class.step-active]="bookingStep === 3"><span class="step">03</span><div><span class="section-overline">QUASE LÁ</span><h2>Confirme seus dados</h2><p>Só precisamos de um nome e telefone para sua reserva.</p></div></div>
+              <div class="field-grid">
+                <label class="field">Seu nome<input type="text" autocomplete="name" placeholder="Como podemos chamar você?" maxlength="120" [(ngModel)]="booking.customer_name"></label>
+                <label class="field">Telefone com DDD<input type="tel" autocomplete="tel" placeholder="(85) 99999-9999" [(ngModel)]="booking.customer_phone"></label>
+              </div>
+              <button type="button" class="primary-button" [disabled]="saving || !selectedSlot" (click)="confirmBooking()"><span>{{ saving ? 'Confirmando...' : 'Confirmar agendamento' }}</span><span class="button-arrow" aria-hidden="true">↗</span></button>
+              }
+            </section>
+
+            <aside class="summary-column">
+              <div class="summary-card" [class.has-selection]="selectedSlot"><div class="summary-orbit" aria-hidden="true"></div><div class="summary-top"><span class="summary-asterisk">✳</span><span>SEU PRÓXIMO CAPÍTULO</span><span>01 / 01</span></div><div class="summary-body"><span class="summary-eyebrow">RESUMO DA RESERVA</span><h3>Um tempo<br><em>só seu.</em></h3><div class="summary-row"><span>Serviço</span><strong>{{ confirmed?.service_name || selectedService()?.name || 'A escolher' }}</strong></div><div class="summary-row"><span>Duração</span><strong>{{ selectedService()?.duration_minutes || '—' }} min</strong></div><div class="summary-row"><span>Profissional</span><strong>{{ confirmed?.professional_name || selectedSlot?.professional_name || 'A definir' }}</strong></div><div class="summary-row"><span>Data</span><strong>{{ formatDay(confirmed?.starts_at || booking.day) }}</strong></div><div class="summary-row"><span>Horário</span><strong>{{ confirmed ? formatTime(confirmed.starts_at) : selectedSlot ? formatTime(selectedSlot.starts_at) : 'A escolher' }}</strong></div><div class="summary-row total"><span>Valor</span><strong>{{ confirmed ? (confirmed.price | currency:'BRL') : selectedService() ? (selectedService()?.price | currency:'BRL') : '—' }}</strong></div></div><div class="summary-bottom">BARBERFLOW <span>✦</span> O TEMPO DO SEU LADO</div></div>
+              <div class="aside-note"><span aria-hidden="true">↗</span><p>Sua reserva só é confirmada depois da verificação final do horário.</p></div>
+            </aside>
+          </div>
+        </div>
+      } @else {
+        <div class="page-enter">
+          <section class="admin-hero"><div><div class="hero-kicker"><span class="kicker-line"></span> ÁREA INTERNA / BARBERFLOW</div><h1>{{ tab === 'agenda' ? 'Tudo no seu tempo.' : tab === 'services' ? 'O que fazemos.' : tab === 'professionals' ? 'Quem faz acontecer.' : 'Cada cliente, uma história.' }}</h1><p>{{ tab === 'agenda' ? 'Cada atendimento no lugar certo.' : tab === 'services' ? 'Cuide dos detalhes de cada serviço.' : tab === 'professionals' ? 'Organize a equipe e seus horários.' : 'Conheça quem volta e acompanhe cada visita.' }}</p></div><div class="admin-hero-symbol" aria-hidden="true">{{ tab === 'agenda' ? '02' : tab === 'services' ? '03' : tab === 'professionals' ? '04' : '05' }}</div></section>
+
+          <section class="admin-access card team-entry">
+            <div><span class="mini-label">EQUIPE / ENTRADA</span><strong>{{ activeProfessionalId === -1 ? 'Preparar a barbearia' : activeProfessionalId ? 'Olá, ' + activeProfessional()?.name : 'Quem está atendendo hoje?' }}</strong><p>{{ activeProfessionalId === -1 ? 'Cadastre serviços e o primeiro barbeiro.' : activeProfessionalId ? 'A agenda começa filtrada para o seu nome. Você pode ver toda a equipe no filtro.' : 'Escolha seu nome para abrir a área da barbearia.' }}</p></div>
+            @if (activeProfessionalId) { <button type="button" class="secondary-button" (click)="switchProfessional()">Trocar barbeiro <span>↗</span></button> }
+            @else {
+              @if (loadingProfessionals) { <span class="mini-label">CARREGANDO EQUIPE...</span> }
+              @else if (hasActiveProfessionals()) {
+                <div class="team-picker"><div class="team-choices" role="group" aria-label="Escolha o barbeiro">
+                  @for (professional of professionals; track professional.id) { @if (professional.active) { <button type="button" class="team-choice" [class.selected]="choiceProfessionalId === professional.id" (click)="choiceProfessionalId = professional.id"><span class="team-choice-avatar">{{ professional.name.slice(0, 1).toUpperCase() }}</span><span class="team-choice-copy"><strong>{{ professional.name }}</strong><small>{{ professional.service_ids.length }} serviço(s) · {{ professional.work_periods.length }} turno(s)</small></span><span aria-hidden="true">↗</span></button> } }
+                </div><button type="button" class="secondary-button" [disabled]="!choiceProfessionalId" (click)="enterAsProfessional()">Entrar na barbearia <span>↗</span></button></div>
+              } @else { <button type="button" class="secondary-button" (click)="choiceProfessionalId = -1; enterAsProfessional()">Cadastrar primeiro barbeiro <span>↗</span></button> }
+            }
+          </section>
+
+          @if (activeProfessionalId) {
+            @if (tab === 'agenda') {
+              <section class="card admin-card agenda-board">
+                <div class="card-heading"><div><span class="mini-label">ATENDIMENTOS / 02</span><h2>Agenda em movimento</h2></div><span class="count-pill">{{ appointments.length }} RESERVAS</span></div>
+                <div class="agenda-toolbar">
+                  <div class="agenda-date-actions" role="group" aria-label="Navegar pelas datas"><button type="button" class="secondary-button" (click)="moveAgenda(-1)" aria-label="Período anterior">←</button><button type="button" class="secondary-button" (click)="agendaDay = today; loadAppointments()">Hoje</button><button type="button" class="secondary-button" (click)="moveAgenda(1)" aria-label="Próximo período">→</button></div>
+                  <div class="view-switch" role="group" aria-label="Visualização da agenda"><button type="button" [attr.aria-pressed]="agendaView === 'day'" [class.active]="agendaView === 'day'" (click)="agendaView = 'day'; loadAppointments()">Dia</button><button type="button" [attr.aria-pressed]="agendaView === 'week'" [class.active]="agendaView === 'week'" (click)="agendaView = 'week'; loadAppointments()">Semana</button></div>
+                  <label class="field">Data<input type="date" [(ngModel)]="agendaDay" (ngModelChange)="loadAppointments()"></label>
+                  <label class="field">Profissional<select [(ngModel)]="agendaProfessionalId" (ngModelChange)="loadAppointments()"><option [ngValue]="0">Toda a equipe</option>@for (professional of professionals; track professional.id) { <option [ngValue]="professional.id">{{ professional.name }}</option> }</select></label>
+                </div>
+                <div class="hours-overview"><span class="mini-label">EXPEDIENTE DA EQUIPE</span><div class="hours-overview-list">@for (professional of agendaTeam(); track professional.id) { <div><strong>{{ professional.name }}</strong><span>{{ agendaView === 'day' ? dailyHours(professional, agendaDay) : weeklyHours(professional) }}</span></div> }</div></div>
+                @if (loadingAgenda) { <div class="empty-state" role="status"><strong>Carregando agenda...</strong><span>Consultando reservas e bloqueios do período.</span></div> }
+                @else if (agendaError) { <div class="empty-state" role="alert"><strong>Não foi possível carregar a agenda</strong><span>{{ agendaError }}</span><button type="button" class="text-button" (click)="loadAppointments()">Tentar novamente</button></div> }
+                @else if (appointments.length || blocks.length) {
+                  <div class="agenda-feed">
+                    @for (appointment of appointments; track appointment.id) {
+                      <article class="agenda-entry" [class.is-muted]="appointment.status === 'cancelled' || appointment.status === 'no_show'">
+                        <div class="agenda-stamp"><strong>{{ formatTime(appointment.starts_at) }}</strong><span>{{ formatDay(appointment.starts_at) }}</span></div>
+                        <div class="agenda-entry-body"><div class="agenda-entry-title"><strong>{{ appointment.customer_name }}</strong><span class="pill" [class.pill-done]="appointment.status === 'completed'" [class.pill-cancelled]="appointment.status === 'cancelled' || appointment.status === 'no_show'">{{ statusLabel(appointment.status) }}</span></div><p>{{ appointment.service_name }} · {{ appointment.professional_name }} · até {{ formatTime(appointment.ends_at) }}</p><small>#{{ appointment.id }} · {{ appointment.customer_phone }} · {{ appointment.price | currency:'BRL' }}</small>
+                          @if (appointment.status === 'scheduled') { <div class="agenda-actions"><button type="button" [disabled]="saving" (click)="changeStatus(appointment, 'in_progress')">Iniciar</button><button type="button" [disabled]="saving" (click)="openReschedule(appointment)">Reagendar</button><button type="button" [disabled]="saving" (click)="changeStatus(appointment, 'no_show')">Faltou</button><button type="button" class="danger-action" [disabled]="saving" (click)="changeStatus(appointment, 'cancelled')">Cancelar</button></div> }
+                          @if (appointment.status === 'in_progress') { <div class="agenda-actions"><button type="button" [disabled]="saving" (click)="changeStatus(appointment, 'completed')">Concluir</button><button type="button" class="danger-action" [disabled]="saving" (click)="changeStatus(appointment, 'cancelled')">Cancelar</button></div> }
+                          @if (rescheduleId === appointment.id) { <div class="agenda-inline-form"><label class="field">Nova data<input type="date" [min]="today" [(ngModel)]="rescheduleForm.day"></label><label class="field">Horário<input type="time" step="900" [(ngModel)]="rescheduleForm.time"></label><label class="field">Profissional<select [(ngModel)]="rescheduleForm.professional_id">@for (professional of professionals; track professional.id) { @if (professional.active && professional.service_ids.includes(appointment.service_id)) { <option [ngValue]="professional.id">{{ professional.name }}</option> } }</select></label><button type="button" class="secondary-button" [disabled]="saving" (click)="saveReschedule()">Salvar ↗</button><button type="button" class="text-button" (click)="rescheduleId = 0">Fechar</button></div> }
+                        </div>
+                      </article>
+                    }
+                    @for (block of blocks; track block.id) { <article class="agenda-entry block-entry"><div class="agenda-stamp"><strong>{{ formatTime(block.starts_at) }}</strong><span>{{ formatDay(block.starts_at) }}</span></div><div class="agenda-entry-body"><div class="agenda-entry-title"><strong>Horário bloqueado</strong><span class="pill">BLOQUEIO</span></div><p>{{ block.professional_name }} · até {{ formatTime(block.ends_at) }}</p><small>{{ block.reason || 'Sem motivo informado' }}</small><div class="agenda-actions"><button type="button" class="danger-action" [disabled]="saving" (click)="removeBlock(block)">Remover bloqueio</button></div></div></article> }
+                  </div>
+                } @else { <div class="empty-state"><span class="empty-glyph" aria-hidden="true">◌</span><strong>Agenda livre neste período</strong><span>Nenhum agendamento ou bloqueio encontrado.</span></div> }
+              </section>
+              <div class="admin-grid agenda-forms">
+                <section class="card admin-card"><span class="mini-label">RESERVA / BALCÃO</span><h2>Novo agendamento</h2><div class="stack-fields"><label class="field">Serviço<select [(ngModel)]="manualForm.service_id" (ngModelChange)="loadManualSlots()"><option [ngValue]="0">Selecione</option>@for (service of services; track service.id) { @if (service.active) { <option [ngValue]="service.id">{{ service.name }} · {{ service.duration_minutes }} min</option> } }</select></label><div class="field-grid"><label class="field">Profissional<select [(ngModel)]="manualForm.professional_id" (ngModelChange)="loadManualSlots()"><option [ngValue]="0">Qualquer disponível</option>@for (professional of professionals; track professional.id) { @if (professional.active && professional.service_ids.includes(manualForm.service_id)) { <option [ngValue]="professional.id">{{ professional.name }}</option> } }</select></label><label class="field">Data<input type="date" [min]="today" [(ngModel)]="manualForm.day" (ngModelChange)="loadManualSlots()"></label></div>@if (manualForm.service_id) { <div><span class="mini-label">HORÁRIOS LIVRES / {{ manualSlots.length }}</span>@if (loadingManualSlots) { <p class="hint" role="status">Consultando horários...</p> } @else if (manualSlotsError) { <p class="hint" role="alert">{{ manualSlotsError }}</p><button type="button" class="text-button" (click)="loadManualSlots()">Tentar novamente</button> } @else if (manualSlots.length) { <div class="manual-slots">@for (slot of manualSlots; track slot.starts_at + '-' + slot.professional_id) { <button type="button" [class.selected]="manualSlot?.starts_at === slot.starts_at && manualSlot.professional_id === slot.professional_id" (click)="manualSlot = slot">{{ formatTime(slot.starts_at) }}<small>{{ slot.professional_name }}</small></button> }</div> } @else { <p class="hint">Sem horários disponíveis para esta escolha.</p> }</div> }<div class="field-grid"><label class="field">Nome do cliente<input type="text" [(ngModel)]="manualForm.customer_name" placeholder="Nome completo"></label><label class="field">Telefone com DDD<input type="tel" [(ngModel)]="manualForm.customer_phone" placeholder="(85) 99999-9999"></label></div><button type="button" class="primary-button" [disabled]="saving || !manualSlot" (click)="saveManualBooking()"><span>Confirmar reserva</span><span class="button-arrow">↗</span></button></div></section>
+                <section class="card admin-card"><span class="mini-label">TEMPO / INDISPONÍVEL</span><h2>Bloquear horário</h2><div class="stack-fields"><label class="field">Profissional<select [(ngModel)]="blockForm.professional_id"><option [ngValue]="0">Selecione</option>@for (professional of professionals; track professional.id) { @if (professional.active) { <option [ngValue]="professional.id">{{ professional.name }}</option> } }</select></label><label class="field">Data<input type="date" [(ngModel)]="blockForm.day"></label><div class="field-grid"><label class="field">Início<input type="time" [(ngModel)]="blockForm.starts_at"></label><label class="field">Fim<input type="time" [(ngModel)]="blockForm.ends_at"></label></div><label class="field">Motivo opcional<input type="text" maxlength="200" [(ngModel)]="blockForm.reason" placeholder="Ex.: almoço, folga, compromisso"></label><p class="hint">O bloqueio retira este intervalo dos horários disponíveis para clientes.</p><button type="button" class="primary-button" [disabled]="saving" (click)="saveBlock()"><span>Bloquear intervalo</span><span class="button-arrow">↗</span></button></div></section>
+              </div>
+            }
+            @if (tab === 'services') {
+              <div class="admin-grid">
+                <section class="card admin-card">
+                  <div class="card-heading"><div><span class="mini-label">CATÁLOGO / 03</span><h2>Serviços cadastrados</h2></div><span class="count-pill">{{ services.length }} ITENS</span></div>
+                  @if (services.length) {
+                    <div class="catalog-list">
+                      @for (service of services; track service.id) {
+                        <div class="catalog-item" [class.inactive-item]="!service.active">
+                          <div class="catalog-icon">✳</div>
+                          <div class="catalog-info"><strong>{{ service.name }}</strong><span>Duração: {{ service.duration_minutes }} min · {{ service.description || 'Sem descrição' }}</span><span class="service-hours">Horários da equipe: {{ serviceHours(service) }}</span><div class="item-actions"><button type="button" (click)="editService(service)">Editar</button><button type="button" (click)="changeServiceActive(service)">{{ service.active ? 'Inativar' : 'Reativar' }}</button></div></div>
+                          <div class="catalog-price"><b>{{ service.price | currency:'BRL' }}</b><small>{{ service.active ? 'ATIVO' : 'INATIVO' }}</small></div>
+                        </div>
+                      }
+                    </div>
+                  } @else { <div class="empty-state"><span class="empty-glyph" aria-hidden="true">◌</span><strong>O catálogo começa aqui</strong><span>Cadastre seu primeiro serviço.</span></div> }
+                </section>
+                <section class="card admin-card"><span class="mini-label">{{ editingServiceId ? 'EDITAR / SERVIÇO' : 'CRIAR / NOVO SERVIÇO' }}</span><h2>{{ editingServiceId ? 'Editar serviço' : 'Adicionar serviço' }}</h2>
+                  <div class="stack-fields"><label class="field">Nome<input type="text" [(ngModel)]="newService.name" placeholder="Ex.: Corte masculino"></label><label class="field">Descrição<input type="text" [(ngModel)]="newService.description" placeholder="Breve descrição"></label><div class="field-grid"><label class="field">Preço (R$)<input type="number" min="0" step="0.01" [(ngModel)]="newService.price"></label><label class="field">Duração (min)<input type="number" min="1" max="480" [(ngModel)]="newService.duration_minutes"></label></div><button type="button" class="primary-button" [disabled]="saving" (click)="addService()"><span>{{ editingServiceId ? 'Salvar alterações' : 'Cadastrar serviço' }}</span><span class="button-arrow">↗</span></button>@if (editingServiceId) { <button type="button" class="text-button" (click)="cancelServiceEdit()">Cancelar edição</button> }</div>
+                </section>
+              </div>
+            }
+            @if (tab === 'professionals') {
+              <div class="admin-grid"><section class="card admin-card"><span class="mini-label">EQUIPE / 04</span><h2>{{ editingProfessionalId ? 'Editar profissional' : 'Profissionais' }}</h2>
+                  @if (professionals.length) { <div class="professional-list">@for (professional of professionals; track professional.id) { <div class="professional-item" [class.inactive-item]="!professional.active"><div class="professional-avatar">{{ professional.name.slice(0, 1).toUpperCase() }}</div><div class="professional-info"><strong>{{ professional.name }}</strong><span>{{ professional.service_ids.length }} serviço(s) · {{ professional.active ? 'Ativo' : 'Inativo' }}</span><span class="professional-hours">{{ weeklyHours(professional) }}</span><div class="item-actions"><button type="button" (click)="editProfessional(professional)">Editar</button><button type="button" (click)="changeProfessionalActive(professional)">{{ professional.active ? 'Inativar' : 'Reativar' }}</button></div></div></div> }</div> }
+                  <div class="stack-fields form-divider"><label class="field">Nome<input type="text" [(ngModel)]="newProfessional.name" placeholder="Nome do profissional"></label><div class="field"><span>Serviços realizados</span><div class="check-list">@for (service of services; track service.id) { @if (service.active || newProfessional.service_ids.includes(service.id)) { <label><input #check type="checkbox" [checked]="newProfessional.service_ids.includes(service.id)" (change)="toggleService(service.id, check.checked)"><span>{{ service.name }}{{ service.active ? '' : ' (inativo)' }}</span></label> } }</div></div><button type="button" class="primary-button" [disabled]="saving" (click)="addProfessional()"><span>{{ editingProfessionalId ? 'Salvar alterações' : 'Cadastrar profissional' }}</span><span class="button-arrow">↗</span></button>@if (editingProfessionalId) { <button type="button" class="text-button" (click)="cancelProfessionalEdit()">Cancelar edição</button> }</div></section>
+                <section class="card admin-card"><span class="mini-label">EXPEDIENTE / CONFIGURAR</span><h2>Jornada de trabalho</h2><label class="field">Profissional<select [ngModel]="selectedProfessionalId" (ngModelChange)="selectProfessional($event)"><option [ngValue]="0">Selecione um profissional</option>@for (professional of professionals; track professional.id) { <option [ngValue]="professional.id">{{ professional.name }}</option> }</select></label>
+                  @if (selectedProfessionalId) { <div class="period-list">@for (period of periods; track $index) { <div class="period-row"><select [(ngModel)]="period.weekday" aria-label="Dia da semana">@for (day of weekdays; track $index) { <option [ngValue]="$index">{{ day }}</option> }</select><input type="time" [(ngModel)]="period.starts_at" aria-label="Início"><span>até</span><input type="time" [(ngModel)]="period.ends_at" aria-label="Fim"><button type="button" class="remove-button" (click)="removePeriod($index)" aria-label="Remover período">×</button></div> }</div><div class="period-actions"><button type="button" class="text-button" (click)="addPeriod()">+ Adicionar período</button><button type="button" class="text-button" (click)="applyStandardPeriods()">Usar horário padrão</button><button type="button" class="secondary-button" [disabled]="saving" (click)="savePeriods()">Salvar jornada <span>↗</span></button></div><p class="hint">Horário padrão: segunda a sábado, 09:00–12:00 e 13:00–18:00. Ajuste os períodos antes de salvar. Para retirar o expediente, remova todos os períodos e salve.</p> }
+                  @else { <div class="empty-state"><span class="empty-glyph" aria-hidden="true">◌</span><strong>Jornada a configurar</strong><span>Selecione um profissional para começar.</span></div> }
+                </section></div>
+            }
+            @if (tab === 'customers') {
+              <div class="admin-grid">
+                <section class="card admin-card">
+                  <div class="card-heading"><div><span class="mini-label">RELACIONAMENTO / 05</span><h2>Clientes</h2></div><span class="count-pill">{{ customers.length }} PESSOAS</span></div>
+                  <label class="field customer-search">Buscar por nome ou telefone<input type="search" [(ngModel)]="customerSearch" placeholder="Quem você procura?"></label>
+                  @if (filteredCustomers().length) {
+                    <div class="customer-list">@for (customer of filteredCustomers(); track customer.id) {
+                      <button type="button" class="customer-item" [class.selected]="editingCustomerId === customer.id" (click)="editCustomer(customer)"><span class="customer-avatar">{{ customer.name.slice(0, 1).toUpperCase() }}</span><span class="customer-identity"><strong>{{ customer.name }}</strong><small>{{ customer.phone }} · {{ customer.appointments_count }} visita(s)</small></span><span aria-hidden="true">↗</span></button>
+                    }</div>
+                  } @else { <div class="empty-state"><span class="empty-glyph" aria-hidden="true">◌</span><strong>Nenhum cliente encontrado</strong><span>Clientes também entram aqui ao agendar online.</span></div> }
+                </section>
+                <div class="customer-detail-stack">
+                  <section class="card admin-card"><div class="card-heading"><div><span class="mini-label">{{ editingCustomerId ? 'FICHA / CLIENTE' : 'CRIAR / NOVO CLIENTE' }}</span><h2>{{ editingCustomerId ? 'Dados do cliente' : 'Adicionar cliente' }}</h2></div>@if (editingCustomerId) { <button type="button" class="text-button" (click)="newCustomer()">+ Novo</button> }</div>
+                    <div class="stack-fields"><label class="field">Nome<input type="text" [(ngModel)]="customerForm.name" placeholder="Nome completo"></label><div class="field-grid"><label class="field">Telefone com DDD<input type="tel" [(ngModel)]="customerForm.phone" placeholder="(85) 99999-9999"></label><label class="field">E-mail opcional<input type="email" [(ngModel)]="customerForm.email" placeholder="nome@exemplo.com"></label></div><label class="field">Observações internas<textarea [(ngModel)]="customerForm.notes" rows="3" placeholder="Preferências ou informações úteis para a equipe"></textarea></label><button type="button" class="primary-button" [disabled]="saving" (click)="saveCustomer()"><span>{{ editingCustomerId ? 'Salvar alterações' : 'Cadastrar cliente' }}</span><span class="button-arrow">↗</span></button></div>
+                  </section>
+                  @if (editingCustomerId) { <section class="card admin-card"><span class="mini-label">HISTÓRICO / ATENDIMENTOS</span><h2>{{ customerHistory.length }} visita(s)</h2>@if (loadingCustomerHistory) { <p class="hint" role="status">Carregando histórico...</p> } @else if (customerHistoryError) { <p class="hint" role="alert">{{ customerHistoryError }}</p> } @else if (customerHistory.length) { <div class="appointment-list">@for (appointment of customerHistory; track appointment.id) { <div class="appointment"><div class="time-block">{{ formatDay(appointment.starts_at) }}</div><div><strong>{{ appointment.service_name }}</strong><span>{{ formatTime(appointment.starts_at) }} · {{ appointment.professional_name }}</span></div><span class="pill">{{ statusLabel(appointment.status) }}</span></div> }</div> } @else { <div class="empty-state"><span class="empty-glyph" aria-hidden="true">◌</span><strong>Sem atendimentos ainda</strong><span>As reservas deste telefone aparecerão aqui.</span></div> }</section> }
+                </div>
+              </div>
+            }
+          }
+        </div>
+      }
+    </div>
+  </main>
+</div>

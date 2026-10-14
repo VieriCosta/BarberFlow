@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: barberflow
+      POSTGRES_USER: barberflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+    volumes:
+      - barberflow_db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barberflow -d barberflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://barberflow:${POSTGRES_PASSWORD}@db:5432/barberflow
+      BARBERFLOW_TIMEZONE: America/Fortaleza
+      BARBERFLOW_CORS_ORIGINS: http://localhost:4200
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  barberflow_db:
