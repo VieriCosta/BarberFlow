@@ -10,7 +10,7 @@ from .auth import administrator, Actor, audit, utc
 from .database import get_db
 from .models import Appointment, Notification
 
-router = APIRouter(prefix="/api/notifications", tags=["Notifications"], dependencies=[Depends(administrator)])
+router = APIRouter(prefix="/notifications", tags=["Notifications"], dependencies=[Depends(administrator)])
 Db = Annotated[Session, Depends(get_db)]
 
 

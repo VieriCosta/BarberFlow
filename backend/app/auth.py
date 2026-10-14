@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .models import AuditEvent, LoginAttempt, LoginSession, Professional, User
 
-router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 Db = Annotated[Session, Depends(get_db)]
 
 
@@ -40,7 +40,7 @@ def verify_password(password: str, encoded: str) -> bool:
 
 def user_data(user: User):
     return dict(id=user.id, username=user.username, name=user.name, role=user.role,
-                professional_id=user.professional_id, active=user.active)
+                professional_id=user.professional_id, active=user.active, shop_id=user.shop_id)
 
 
 def current_user(db: Db, authorization: Annotated[str | None, Header()] = None) -> User:
@@ -145,7 +145,7 @@ def login(data: LoginInput, db: Db, request: Request):
         db.execute(text("SELECT pg_advisory_xact_lock(73481294)"))
     now = datetime.now(timezone.utc)
     # Persistent limits survive restarts and apply across API processes.
-    for value in ("user:" + data.username.lower(), "ip:" + (request.client.host if request.client else "unknown")):
+    for value in ("user:" + str(db.info.get("shop_id", 1)) + ":" + data.username.lower(), "ip:" + (request.client.host if request.client else "unknown")):
         key = token_hash(value)
         attempt = db.get(LoginAttempt, key)
         if attempt is None:
@@ -163,11 +163,16 @@ def login(data: LoginInput, db: Db, request: Request):
     valid = verify_password(data.password, encoded)
     if user is None or not user.active or not valid:
         raise HTTPException(401, "Usuário ou senha inválidos")
+    result = create_session(db, user)
+    db.commit()
+    return result
+
+
+def create_session(db: Session, user: User):
     token = secrets.token_urlsafe(32)
     expiry = datetime.now(timezone.utc) + timedelta(hours=8)
     db.add(LoginSession(token_hash=token_hash(token), user_id=user.id, expires_at=expiry))
     audit(db, "user.login", user.id, user)
-    db.commit()
     return {"token": token, "expires_at": expiry.isoformat(), "user": user_data(user)}
 
 

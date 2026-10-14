@@ -12,7 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine
-from .models import Appointment, Customer, Professional, ScheduleBlock, Service, WorkPeriod
+from .models import Appointment, Barbershop, Customer, Professional, ScheduleBlock, Service, WorkPeriod
 
 
 ZONE = ZoneInfo(os.getenv("BARBERFLOW_TIMEZONE", "America/Fortaleza"))
@@ -36,9 +36,19 @@ NAMES = ["Pedro Lima", "Bruno Rocha", "Gabriel Alves", "Mateus Souza",
 def seed_demo(db: Session, today: date | None = None) -> dict[str, int]:
     """Add missing demo records without replacing existing catalog or schedules."""
     today = today or datetime.now(ZONE).date()
+    if db.info.get("shop_id") not in (None, 1):
+        raise ValueError("A carga Demo pertence somente à barbearia inicial")
+    db.info["shop_id"] = 1
     counts = dict(services=0, professionals=0, customers=0, appointments=0, blocks=0)
     if db.bind.dialect.name == "sqlite":
         db.execute(text("BEGIN IMMEDIATE"))
+    shop = db.get(Barbershop, 1)
+    if shop is None:
+        shop = Barbershop(id=1, name="Barbearia BarberFlow (Demo)", slug="barberflow", published=True)
+        db.add(shop)
+        db.flush()
+    elif shop.name == "Barbearia BarberFlow":
+        shop.name, shop.published = "Barbearia BarberFlow (Demo)", True
 
     services = []
     for name, description, price, duration in SERVICES:

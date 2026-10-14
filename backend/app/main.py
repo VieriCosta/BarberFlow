@@ -10,6 +10,7 @@ from .schedule import router as schedule_router
 from .customer_portal import router as portal_router
 from .notifications import router as notifications_router
 from .catalog import app as catalog_router
+from .barbershops import router as shops_router
 
 
 @asynccontextmanager
@@ -23,11 +24,16 @@ app.add_middleware(CORSMiddleware,
     allow_origins=os.getenv("BARBERFLOW_CORS_ORIGINS", "http://localhost:4200").split(","),
     allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "Authorization", "Bootstrap-Key"])
-app.include_router(auth_router)
-app.include_router(booking_router)
-app.include_router(finance_router)
-app.include_router(schedule_router)
+app.include_router(auth_router, prefix="/api/shops/{shop_id}")
+app.include_router(booking_router, prefix="/api/shops/{shop_id}")
+app.include_router(finance_router, prefix="/api/shops/{shop_id}")
+app.include_router(schedule_router, prefix="/api/shops/{shop_id}")
 
-app.include_router(portal_router)
-app.include_router(notifications_router)
-app.include_router(catalog_router)
+app.include_router(portal_router, prefix="/api/shops/{shop_id}")
+app.include_router(notifications_router, prefix="/api/shops/{shop_id}")
+app.include_router(catalog_router, prefix="/api/shops/{shop_id}")
+app.include_router(shops_router)
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}

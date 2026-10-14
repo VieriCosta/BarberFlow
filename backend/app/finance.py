@@ -12,7 +12,7 @@ from .database import get_db
 from .auth import Actor, staff, administrator, audit
 from .models import Appointment, CashClose, Expense, Payment, Professional
 
-router = APIRouter(prefix="/api", tags=["Finance"], dependencies=[Depends(staff)])
+router = APIRouter(prefix="", tags=["Finance"], dependencies=[Depends(staff)])
 Db = Annotated[Session, Depends(get_db)]
 ZONE = ZoneInfo(os.getenv("BARBERFLOW_TIMEZONE", "America/Fortaleza"))
 Method = Literal["cash", "pix", "credit", "debit"]

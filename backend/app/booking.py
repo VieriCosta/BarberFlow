@@ -54,7 +54,7 @@ def appointment_data(appointment: Appointment) -> dict:
             "professional_name": appointment.professional.name, "customer_name": appointment.customer_name,
             "customer_phone": appointment.customer_phone, "starts_at": start.astimezone(ZONE).isoformat(),
             "ends_at": end.astimezone(ZONE).isoformat(), "customer_id": appointment.customer_id, "price": str(appointment.price),
-            "status": appointment.status, "paid": appointment.payment is not None}
+            "shop_id": appointment.shop_id, "status": appointment.status, "paid": appointment.payment is not None}
 
 
 def block_data(block: ScheduleBlock) -> dict:
@@ -87,22 +87,22 @@ def has_future_booking(db: Session, *conditions) -> bool:
     ).limit(1)) is not None
 
 
-@app.get("/api/health")
+@app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-@app.get("/api/public/config")
+@app.get("/public/config")
 def public_config():
     return {"timezone": ZONE.key}
 
 
-@app.get("/api/public/services")
+@app.get("/public/services")
 def public_services(db: Db):
     return [service_data(s) for s in db.scalars(select(Service).where(Service.active).order_by(Service.name))]
 
 
-@app.get("/api/public/professionals")
+@app.get("/public/professionals")
 def public_professionals(db: Db, service_id: int | None = None):
     query = select(Professional).options(selectinload(Professional.services), selectinload(Professional.work_periods)).where(Professional.active)
     if service_id is not None:
@@ -151,14 +151,14 @@ def is_available(db: Session, professional: Professional, start: datetime, end: 
 
 
 def remember_customer(db: Session, name: str, phone: str) -> int:
-    values = {"name": name, "phone": phone, "notes": ""}
+    values = {"name": name, "phone": phone, "notes": "", "shop_id": db.info["shop_id"]}
     dialect = db.bind.dialect.name
     if dialect == "postgresql":
         from sqlalchemy.dialects.postgresql import insert
-        statement = insert(Customer).values(**values).on_conflict_do_nothing(index_elements=[Customer.phone])
+        statement = insert(Customer).values(**values).on_conflict_do_nothing(index_elements=[Customer.shop_id, Customer.phone])
     elif dialect == "sqlite":
         from sqlalchemy.dialects.sqlite import insert
-        statement = insert(Customer).values(**values).on_conflict_do_nothing(index_elements=[Customer.phone])
+        statement = insert(Customer).values(**values).on_conflict_do_nothing(index_elements=[Customer.shop_id, Customer.phone])
     else:
         if db.scalar(select(Customer.id).where(Customer.phone == phone)) is None:
             db.add(Customer(**values))
@@ -168,7 +168,7 @@ def remember_customer(db: Session, name: str, phone: str) -> int:
     return db.scalar(select(Customer.id).where(Customer.phone == phone))
 
 
-@app.get("/api/public/availability")
+@app.get("/public/availability")
 def availability(db: Db, service_id: int, day: date, professional_id: int | None = None):
     service = db.get(Service, service_id)
     if service is None or not service.active:
@@ -232,12 +232,14 @@ def reserve(data: BookingInput, db: Session, actor=None) -> dict:
     raise HTTPException(409, "Horário indisponível; escolha outro horário")
 
 
-@app.post("/api/public/appointments", status_code=201)
+@app.post("/public/appointments", status_code=201)
 def create_public_appointment(data: BookingInput, db: Db):
+    if not db.info["shop"].published:
+        raise HTTPException(409, "Esta barbearia ainda está preparando sua agenda")
     return reserve(data, db)
 
 
-@app.post("/api/appointments", status_code=201)
+@app.post("/appointments", status_code=201)
 def create_internal_appointment(data: BookingInput, db: Db, actor: Actor):
     professional_scope(actor, data.professional_id)
     if actor.role == "barber":
@@ -245,7 +247,7 @@ def create_internal_appointment(data: BookingInput, db: Db, actor: Actor):
     return reserve(data, db, actor)
 
 
-@app.get("/api/appointments")
+@app.get("/appointments")
 def list_appointments(db: Db, day: date = Query(default_factory=lambda: datetime.now(ZONE).date()),
                       view: Literal["day", "week"] = "day", professional_id: int | None = None, *, actor: Actor):
     professional_id = professional_scope(actor, professional_id)
@@ -264,7 +266,7 @@ def agenda_range(day: date, view: Literal["day", "week"]) -> tuple[datetime, dat
             datetime.combine(after, time.min, tzinfo=ZONE).astimezone(timezone.utc))
 
 
-@app.get("/api/blocks")
+@app.get("/blocks")
 def list_blocks(db: Db, day: date = Query(default_factory=lambda: datetime.now(ZONE).date()),
                 view: Literal["day", "week"] = "day", professional_id: int | None = None, *, actor: Actor):
     professional_id = professional_scope(actor, professional_id)
@@ -276,7 +278,7 @@ def list_blocks(db: Db, day: date = Query(default_factory=lambda: datetime.now(Z
     return [block_data(block) for block in db.scalars(query)]
 
 
-@app.get("/api/agenda-hours")
+@app.get("/agenda-hours")
 def agenda_hours(db: Db, actor: Actor, day: date, view: Literal["day", "week"] = "day", professional_id: int | None = None):
     from .schedule import day_periods
     from .models import ScheduleException
@@ -298,7 +300,7 @@ def agenda_hours(db: Db, actor: Actor, day: date, view: Literal["day", "week"] =
     return results
 
 
-@app.post("/api/blocks", status_code=201)
+@app.post("/blocks", status_code=201)
 def create_block(data: BlockInput, db: Db, actor: Actor):
     professional_scope(actor, data.professional_id)
     start, end = data.starts_at.astimezone(timezone.utc), data.ends_at.astimezone(timezone.utc)
@@ -326,7 +328,7 @@ def create_block(data: BlockInput, db: Db, actor: Actor):
     return block_data(block)
 
 
-@app.delete("/api/blocks/{block_id}", status_code=204)
+@app.delete("/blocks/{block_id}", status_code=204)
 def delete_block(block_id: int, db: Db, actor: Actor):
     begin_write(db)
     block = db.get(ScheduleBlock, block_id)
@@ -338,7 +340,7 @@ def delete_block(block_id: int, db: Db, actor: Actor):
     db.commit()
 
 
-@app.post("/api/appointments/{appointment_id}/reschedule")
+@app.post("/appointments/{appointment_id}/reschedule")
 def reschedule_appointment(appointment_id: int, data: RescheduleInput, db: Db, actor: Actor):
     return reschedule_booking(appointment_id, data, db, actor=actor)
 
@@ -381,7 +383,7 @@ def reschedule_booking(appointment_id: int, data: RescheduleInput, db: Session, 
     return appointment_data(appointment)
 
 
-@app.patch("/api/appointments/{appointment_id}/status")
+@app.patch("/appointments/{appointment_id}/status")
 def update_appointment_status(appointment_id: int, data: StatusInput, db: Db, actor: Actor):
     begin_write(db)
     appointment = db.scalar(select(Appointment).where(Appointment.id == appointment_id).with_for_update())

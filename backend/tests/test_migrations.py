@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine, text
 from app.migrations import migrate
+from app.models import Barbershop, Customer
 import os
 import uuid
 import pytest
@@ -10,6 +11,7 @@ def test_migrate_legacy_database_preserves_and_links_history(tmp_path):
     engine = create_engine(f'sqlite:///{path}')
     with engine.begin() as db:
         db.execute(text('CREATE TABLE customers (id INTEGER PRIMARY KEY, name VARCHAR(120), phone VARCHAR(20), email VARCHAR(255), notes VARCHAR(1000))'))
+        db.execute(text('CREATE UNIQUE INDEX ix_customers_phone ON customers(phone)'))
         db.execute(text('CREATE TABLE appointments (id INTEGER PRIMARY KEY, service_id INTEGER, professional_id INTEGER, customer_name VARCHAR(120), customer_phone VARCHAR(20), starts_at DATETIME, ends_at DATETIME, price NUMERIC, service_name VARCHAR(120), status VARCHAR(20))'))
         db.execute(text("INSERT INTO customers VALUES (1, 'Legacy customer', '85999991234', NULL, '')"))
         db.execute(text("INSERT INTO appointments VALUES (1, 1, 1, 'Legacy customer', '85999991234', '2026-01-01 12:00:00', '2026-01-01 12:30:00', 35, 'Corte', 'completed')"))
@@ -18,7 +20,10 @@ def test_migrate_legacy_database_preserves_and_links_history(tmp_path):
     with engine.connect() as db:
         assert db.execute(text('SELECT customer_id FROM appointments')).scalar() == 1
         assert db.execute(text('SELECT price FROM appointments')).scalar() == 35
-        assert db.execute(text('SELECT COUNT(*) FROM schema_migrations')).scalar() == 3
+        assert db.execute(text('SELECT COUNT(*) FROM schema_migrations')).scalar() == 4
+    with engine.begin() as db:
+        db.execute(Barbershop.__table__.insert().values(id=2, name='Outra barbearia', slug='outra', published=False))
+        db.execute(Customer.__table__.insert().values(id=2, shop_id=2, name='Mesmo cliente', phone='85999991234'))
     assert len(list(tmp_path.glob('legacy.backup-migrate-*.db'))) == 1
     engine.dispose()
 
@@ -51,6 +56,7 @@ def test_postgres_legacy_migration_is_additive_and_repeatable():
     try:
         with engine.begin() as db:
             db.execute(text('CREATE TABLE customers (id INTEGER PRIMARY KEY, name VARCHAR(120), phone VARCHAR(20), email VARCHAR(255), notes VARCHAR(1000))'))
+            db.execute(text('CREATE UNIQUE INDEX ix_customers_phone ON customers(phone)'))
             db.execute(text('CREATE TABLE appointments (id INTEGER PRIMARY KEY, service_id INTEGER, professional_id INTEGER, customer_name VARCHAR(120), customer_phone VARCHAR(20), starts_at TIMESTAMP WITH TIME ZONE, ends_at TIMESTAMP WITH TIME ZONE, price NUMERIC, service_name VARCHAR(120), status VARCHAR(20))'))
             db.execute(text("INSERT INTO customers VALUES (1, 'Legacy customer', '85999991234', NULL, '')"))
             db.execute(text("INSERT INTO appointments VALUES (1, 1, 1, 'Legacy customer', '85999991234', '2026-01-01 12:00:00+00', '2026-01-01 12:30:00+00', 35, 'Corte', 'completed')"))
@@ -59,7 +65,10 @@ def test_postgres_legacy_migration_is_additive_and_repeatable():
         with engine.connect() as db:
             assert db.execute(text('SELECT customer_id FROM appointments')).scalar() == 1
             assert db.execute(text('SELECT price FROM appointments')).scalar() == 35
-            assert db.execute(text('SELECT COUNT(*) FROM schema_migrations')).scalar() == 3
+            assert db.execute(text('SELECT COUNT(*) FROM schema_migrations')).scalar() == 4
+        with engine.begin() as db:
+            db.execute(Barbershop.__table__.insert().values(id=2, name='Outra barbearia', slug='outra', published=False))
+            db.execute(Customer.__table__.insert().values(id=2, shop_id=2, name='Mesmo cliente', phone='85999991234'))
     finally:
         engine.dispose()
         with maintenance.begin() as db:

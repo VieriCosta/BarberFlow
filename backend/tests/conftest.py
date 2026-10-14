@@ -1,12 +1,13 @@
 import os
 import uuid
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from app.database import Base, get_db
+from app.database import Base, configure_shop_session, get_db
 from app.auth import hash_password
-from app.models import User
+from app.models import Barbershop, User
 from app.migrations import migrate
 import app.main as main
 
@@ -27,17 +28,25 @@ def client(tmp_path, monkeypatch):
     migrate(engine)
     factory = sessionmaker(engine, autoflush=False, expire_on_commit=False)
     with factory() as db:
+        db.get(Barbershop, 1).published = True
         db.add(User(username="admin", name="Admin", role="admin", password_hash=hash_password("test-password-123")))
         db.commit()
 
-    def test_db():
+    def test_db(request: Request):
         with factory() as session:
+            configure_shop_session(session, request)
             yield session
 
     main.app.dependency_overrides[get_db] = test_db
     monkeypatch.setattr(main, "migrate", lambda: migrate(engine))
     try:
         with TestClient(main.app) as test_client:
+            original_request = test_client.request
+            def scoped_request(method, url, **kwargs):
+                if isinstance(url, str) and url.startswith('/api/') and not url.startswith(('/api/shops/', '/api/public/barbershops', '/api/health')):
+                    url = '/api/shops/1/' + url[5:]
+                return original_request(method, url, **kwargs)
+            test_client.request = scoped_request
             test_client.db_factory = factory
             login = test_client.post("/api/auth/login", json={"username": "admin", "password": "test-password-123"})
             test_client.headers["Authorization"] = "Bearer " + login.json()["token"]

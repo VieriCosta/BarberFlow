@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from sqlalchemy import select, text, or_, and_
 from .database import SessionLocal
-from .models import Appointment, Customer, Notification
+from .models import Appointment, Barbershop, Customer, Notification
 from .auth import utc
 
 
@@ -57,13 +57,16 @@ def deliver_once(factory=SessionLocal, sender=send):
             db.commit()
             return True
         customer = db.get(Customer, appointment.customer_id) if appointment.customer_id else None
+        shop = db.get(Barbershop, appointment.shop_id)
+        shop_name = shop.name if shop else "BarberFlow"
         zone = ZoneInfo(os.getenv("BARBERFLOW_TIMEZONE", "America/Fortaleza"))
         start = utc(appointment.starts_at).astimezone(zone)
         row.state, row.locked_at, row.attempts = "processing", now, row.attempts+1
         payload = dict(notification_id=row.id, version=row.generation, kind=row.kind,
+                       shop_id=appointment.shop_id, shop_name=shop_name,
                        appointment_id=appointment.id, phone=customer.phone if customer else appointment.customer_phone,
                        email=customer.email if customer else None,
-                       message=f"Olá, {appointment.customer_name}! {appointment.service_name} com {appointment.professional.name}: {start:%d/%m/%Y às %H:%M}.")
+                       message=f"Olá, {appointment.customer_name}! Sua reserva em {shop_name}: {appointment.service_name} com {appointment.professional.name}, {start:%d/%m/%Y às %H:%M}.")
         notification_id = row.id
         db.commit()
     error = ""

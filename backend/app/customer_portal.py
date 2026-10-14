@@ -10,7 +10,7 @@ from .database import get_db
 from .models import Appointment, BookingAccess
 from .schemas import RescheduleInput
 
-router = APIRouter(prefix="/api/public/reservation", tags=["Customer portal"])
+router = APIRouter(prefix="/public/reservation", tags=["Customer portal"])
 Db = Annotated[Session, Depends(get_db)]
 
 

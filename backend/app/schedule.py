@@ -9,7 +9,7 @@ from .auth import Actor, administrator, audit
 from .database import get_db
 from .models import Appointment, Professional, ScheduleException
 
-router = APIRouter(prefix="/api/schedule-exceptions", tags=["Schedule"], dependencies=[Depends(administrator)])
+router = APIRouter(prefix="/schedule-exceptions", tags=["Schedule"], dependencies=[Depends(administrator)])
 Db = Annotated[Session, Depends(get_db)]
 
 

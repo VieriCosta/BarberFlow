@@ -11,12 +11,12 @@ from .booking import Db, service_data, professional_data, customer_data, appoint
 
 app = APIRouter(tags=["Catalog"])
 
-@app.get("/api/services", dependencies=[Depends(current_user)])
+@app.get("/services", dependencies=[Depends(current_user)])
 def list_services(db: Db):
     return [service_data(s) for s in db.scalars(select(Service).order_by(Service.id))]
 
 
-@app.post("/api/services", status_code=201, dependencies=[Depends(administrator)])
+@app.post("/services", status_code=201, dependencies=[Depends(administrator)])
 def create_service(data: ServiceInput, db: Db, actor: Actor):
     service = Service(**data.model_dump())
     db.add(service)
@@ -27,7 +27,7 @@ def create_service(data: ServiceInput, db: Db, actor: Actor):
     return service_data(service)
 
 
-@app.patch("/api/services/{service_id}", dependencies=[Depends(administrator)])
+@app.patch("/services/{service_id}", dependencies=[Depends(administrator)])
 def update_service(service_id: int, data: ServiceUpdate, db: Db, actor: Actor):
     begin_write(db)
     service = db.scalar(select(Service).where(Service.id == service_id).with_for_update())
@@ -46,13 +46,13 @@ def update_service(service_id: int, data: ServiceUpdate, db: Db, actor: Actor):
     return service_data(service)
 
 
-@app.get("/api/professionals", dependencies=[Depends(current_user)])
+@app.get("/professionals", dependencies=[Depends(current_user)])
 def list_professionals(db: Db):
     query = select(Professional).options(selectinload(Professional.services), selectinload(Professional.work_periods)).order_by(Professional.id)
     return [professional_data(p) for p in db.scalars(query)]
 
 
-@app.post("/api/professionals", status_code=201, dependencies=[Depends(administrator)])
+@app.post("/professionals", status_code=201, dependencies=[Depends(administrator)])
 def create_professional(data: ProfessionalInput, db: Db, actor: Actor):
     ids = set(data.service_ids)
     services = list(db.scalars(select(Service).where(Service.id.in_(ids), Service.active)))
@@ -67,7 +67,7 @@ def create_professional(data: ProfessionalInput, db: Db, actor: Actor):
     return professional_data(professional)
 
 
-@app.patch("/api/professionals/{professional_id}", dependencies=[Depends(administrator)])
+@app.patch("/professionals/{professional_id}", dependencies=[Depends(administrator)])
 def update_professional(professional_id: int, data: ProfessionalUpdate, db: Db, actor: Actor):
     begin_write(db)
     professional = db.scalar(select(Professional).options(selectinload(Professional.services), selectinload(Professional.work_periods))
@@ -98,7 +98,7 @@ def update_professional(professional_id: int, data: ProfessionalUpdate, db: Db, 
     return professional_data(professional)
 
 
-@app.get("/api/customers", dependencies=[Depends(staff)])
+@app.get("/customers", dependencies=[Depends(staff)])
 def list_customers(db: Db, q: str | None = Query(default=None, max_length=120)):
     query = select(Customer).order_by(Customer.name)
     if q:
@@ -110,7 +110,7 @@ def list_customers(db: Db, q: str | None = Query(default=None, max_length=120)):
     return [customer_data(db, customer) for customer in db.scalars(query)]
 
 
-@app.post("/api/customers", status_code=201, dependencies=[Depends(staff)])
+@app.post("/customers", status_code=201, dependencies=[Depends(staff)])
 def create_customer(data: CustomerInput, db: Db, actor: Actor):
     customer = Customer(**data.model_dump())
     db.add(customer)
@@ -124,7 +124,7 @@ def create_customer(data: CustomerInput, db: Db, actor: Actor):
     return customer_data(db, customer)
 
 
-@app.patch("/api/customers/{customer_id}", dependencies=[Depends(staff)])
+@app.patch("/customers/{customer_id}", dependencies=[Depends(staff)])
 def update_customer(customer_id: int, data: CustomerUpdate, db: Db, actor: Actor):
     begin_write(db)
     customer = db.scalar(select(Customer).where(Customer.id == customer_id).with_for_update())
@@ -149,7 +149,7 @@ def update_customer(customer_id: int, data: CustomerUpdate, db: Db, actor: Actor
     return customer_data(db, customer)
 
 
-@app.get("/api/customers/{customer_id}/appointments", dependencies=[Depends(staff)])
+@app.get("/customers/{customer_id}/appointments", dependencies=[Depends(staff)])
 def customer_appointments(customer_id: int, db: Db):
     customer = db.get(Customer, customer_id)
     if customer is None:
@@ -159,7 +159,7 @@ def customer_appointments(customer_id: int, db: Db):
     return [appointment_data(appointment) for appointment in db.scalars(query)]
 
 
-@app.put("/api/professionals/{professional_id}/work-periods", dependencies=[Depends(administrator)])
+@app.put("/professionals/{professional_id}/work-periods", dependencies=[Depends(administrator)])
 def replace_work_periods(professional_id: int, periods: list[PeriodInput], db: Db, actor: Actor):
     begin_write(db)
     professional = db.scalar(select(Professional).options(selectinload(Professional.services), selectinload(Professional.work_periods))
