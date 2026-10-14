@@ -1,57 +1,120 @@
 # BarberFlow
 
-Sistema de gestão para barbearia com cadastro de serviços, profissionais e clientes, jornada de trabalho, consulta de horários e agendamento online sem conflitos. O front-end é Angular; a API é Python com FastAPI. O banco usado com Docker é PostgreSQL.
+Plataforma de barbearias com entrada voltada ao cliente: escolha uma barbearia, veja serviços e horários e agende seu corte. Donos podem cadastrar um espaço independente, configurar a equipe e publicar sua barbearia na lista. Angular e FastAPI, PostgreSQL no Docker e SQLite para desenvolvimento local.
 
-## Requisitos
+## Primeira execução
 
-- Node.js compatível com Angular 22 (22.22.3+, 24.15.0+ ou 26+)
-- Docker Compose para API + PostgreSQL **ou** Python 3.13 para desenvolvimento local com SQLite
+Requisitos: Node.js 24.15.0+, Docker Compose ou Python 3.13.
 
-## Executar
+1. Na raiz, execute `node scripts/configure-env.cjs`. O comando prepara o `.env`, gera os segredos que faltam e preserva credenciais existentes.
+2. Execute `docker compose up --build -d`. A API, PostgreSQL e backup diário são iniciados.
+3. Em `frontend`, execute `npm ci` e `npm start`.
+4. Abra http://localhost:4200. A tela inicial mostra as barbearias publicadas, com busca por nome ou cidade. O cliente escolhe uma delas para agendar, sem precisar entrar na área da equipe.
+5. Para criar um negócio, clique em **Cadastrar minha barbearia**, abaixo de **Quer colocar sua barbearia no ar?**. Informe os dados do espaço e crie seu usuário de administrador. Esse cadastro não exige a chave de configuração.
+6. Sua barbearia começa vazia e em configuração. Em **Serviços**, cadastre o catálogo. Em **Profissionais**, cadastre os barbeiros e salve suas jornadas.
+7. Em **Configurações**, marque **Publicar minha barbearia na lista dos clientes** e salve. É necessário ter um serviço ativo e um profissional com jornada. Depois disso, ela aparece como opção na entrada.
+8. Crie as contas da equipe e compartilhe o código ou link de acesso disponível em **Configurações**. Também é possível escolher a barbearia e usar **Sou da equipe**.
 
-1. Copie `.env.example` para `.env` e defina a senha do PostgreSQL.
-2. Na raiz, execute `docker compose up --build -d` para subir API e PostgreSQL.
-3. Em `frontend`, execute `npm install` e `npm start`.
-4. Abra `http://localhost:4200`. Na tela inicial, escolha **Agendar horário** como cliente ou selecione um barbeiro para entrar na área interna. Se ainda não houver equipe, use **Configurar barbearia**.
+A documentação da API fica em http://localhost:8000/docs. As rotas internas exigem o token retornado pelo login.
 
-A documentação interativa da API fica em `http://localhost:8000/docs`.
+### Backend local com SQLite
 
-Para rodar só a API localmente, instale `backend/requirements.txt`, entre em `backend` e execute `uvicorn app.main:app --reload`. Sem `DATABASE_URL`, ela cria `barberflow.db` em SQLite.
+Em `backend`:
 
-## Fluxo disponível
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --env-file ../.env
+```
 
-1. Na primeira entrada, clique em **Configurar barbearia** e cadastre um serviço com preço e duração.
-2. O sistema abre **Profissionais** para cadastrar o primeiro barbeiro e associar o serviço. Depois disso, cada barbeiro pode ser escolhido na entrada.
-3. Ainda em **Profissionais**, adicione os períodos da jornada ou use **Usar horário padrão** e ajuste antes de salvar. Os horários aparecem no cadastro, na agenda e junto aos serviços atendidos.
-4. Em **Agendar horário**, escolha serviço, profissional, data e horário. Informe nome e telefone e confirme.
-5. Em **Agenda**, consulte reservas e bloqueios por dia ou semana, com filtro por profissional e resumo do expediente. Inicie, conclua, cancele, marque falta ou reagende um atendimento. Crie reservas no balcão e bloqueie intervalos indisponíveis.
-6. Em **Serviços**, veja duração e horários da equipe que realiza cada serviço; em **Profissionais**, veja os horários semanais. Edite ou inative os registros. O sistema impede a inativação quando há reservas futuras.
-7. Em **Clientes**, cadastre ou edite uma pessoa e consulte seu histórico. Clientes que agendam online entram automaticamente no cadastro pelo telefone normalizado.
+Sem `DATABASE_URL`, o banco é `backend/barberflow.db`. Dados e reservas existentes são preservados pelas migrações. Linux/macOS: use `.venv/bin/python`.
 
-A API valida novamente o horário dentro da transação de reserva ou reagendamento. No PostgreSQL, bloqueia a linha do profissional enquanto verifica conflitos; no SQLite, serializa as escritas. Bloqueios também impedem reservas e desaparecem da disponibilidade pública quando removidos. As reservas guardam preço, duração implícita no horário final e nome do serviço no momento da criação. Todas as datas são tratadas no fuso `America/Fortaleza`, configurável pela variável `BARBERFLOW_TIMEZONE`; o front-end consulta o fuso da API.
+## Perfis e permissões
+
+| Perfil | Acesso |
+| --- | --- |
+| Administrador | Agenda, cadastros, usuários, expediente especial, financeiro, fechamento, notificações e auditoria |
+| Recepção | Agenda da equipe, clientes, pagamentos, despesas e painel; sem gestão de usuários, catálogo ou fechamento |
+| Barbeiro | Própria agenda, reservas de balcão, bloqueios e ações dos próprios atendimentos |
+| Cliente | Catálogo público, agendamento e gestão de uma reserva por link protegido |
+
+Cada barbearia possui catálogo, profissionais, clientes, reservas, financeiro, usuários e auditoria próprios. As consultas são limitadas pela barbearia na URL, e um token de equipe só funciona no seu espaço. Telefones de clientes e nomes de usuário podem se repetir em barbearias diferentes.
+
+As permissões são verificadas na API. Sessões duram 8 horas e são revogadas no logout, na troca de senha ou na desativação da conta. Login tem limite persistente de tentativas. Senhas usam scrypt e somente hashes dos tokens ficam no banco.
+
+## Fluxos disponíveis
+
+- **Agendamento:** serviço, profissional, data, horário, nome, telefone e e-mail opcional. A confirmação entrega um link para consultar, cancelar ou reagendar aquela reserva. O token fica no fragmento do link, fora dos parâmetros da URL enviados ao servidor.
+- **Portal do cliente:** alteração até 2 horas antes do atendimento, configurável por `BARBERFLOW_CUSTOMER_CHANGE_HOURS`. Reagendamento mantém preço e duração da reserva e valida conflitos novamente.
+- **Agenda:** dia ou semana, filtros, grade por horário/profissional e lista de ações. Clique em uma reserva na grade para abrir suas ações. Iniciar, concluir, cancelar, registrar falta, reagendar, reservar no balcão e bloquear intervalos.
+- **Expediente:** jornada semanal e exceções por data para feriados, férias ou horários especiais. Uma data sem períodos significa fechado. Reservas existentes impedem alterações que as deixariam fora do expediente.
+- **Clientes:** cadastro, busca, observações e histórico ligado por `customer_id`, preservado quando o telefone muda.
+- **Financeiro:** recebimento de atendimentos concluídos, dinheiro/Pix/crédito/débito, descontos, comissão percentual e despesas. Atendimento concluído e pagamento recebido são estados distintos. Não é permitido receber a mesma reserva duas vezes.
+- **Caixa:** consulta diária e fechamento pelo administrador, com dinheiro contado e diferença. O fechamento impede novos pagamentos ou despesas naquele dia. A contagem considera movimentos registrados, sem fundo de troco. Comissões são provisionadas separadamente das despesas.
+- **Painel:** atendimentos, conclusões, faltas, receita recebida, valores pendentes e ocupação por profissional. Recebimentos usam a data do pagamento; pendências usam a data do atendimento.
+- **Auditoria:** registra usuário, ação, registro e horário das alterações, incluindo ações do cliente.
+
+A agenda usa `America/Fortaleza`, configurável por `BARBERFLOW_TIMEZONE`. Reservas, reagendamentos, pagamentos e fechamento usam transações e bloqueios compatíveis com PostgreSQL e SQLite.
+
+## Confirmações e lembretes
+
+As reservas criam uma fila persistente de confirmação e lembrete. O envio precisa de um provedor configurado; a aplicação não envia mensagens apenas por receber uma reserva.
+
+Configure no `.env` um webhook HTTPS que receba o payload da fila **ou** SMTP com STARTTLS e remetente válido. Para SMTP, o cliente precisa informar e-mail. Para envio por telefone, o webhook deve integrar o provedor escolhido.
+
+```powershell
+docker compose --profile notifications up --build -d
+```
+
+Localmente: `python -m app.worker`, com as variáveis de ambiente carregadas. O worker registra tentativas e falhas, tenta novamente até 5 vezes e recupera trabalhos interrompidos. Webhooks recebem uma chave de idempotência estável durante as tentativas. SMTP não oferece essa garantia: uma falha após a entrega pode gerar duplicidade. **Configurações** mostra o estado e permite repetir falhas de reservas ainda pendentes.
+
+## Backup e migrações
+
+O Compose cria um backup PostgreSQL diariamente, mantém arquivos por aproximadamente 14 dias e verifica o catálogo do dump. Os arquivos ficam no volume `barberflow_backups`. Exportação e restauração estão em [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+Para SQLite, execute em `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.backup --output backups --keep 14 --interval 86400
+```
+
+O comando usa a API de backup do SQLite, verifica integridade e mantém os últimos 14 arquivos. Sem `--interval`, faz um único backup.
+
+A API aplica migrações versionadas com preservação dos registros na inicialização. A versão 4 vincula os dados anteriores à barbearia inicial e adapta as regras de unicidade para cada espaço. No SQLite, essa etapa reconstrói as tabelas de clientes, usuários e fechamento quando necessário, preservando os IDs e os registros. SQLite recebe backup antes de uma mudança de versão. PostgreSQL usa bloqueio para impedir migrações simultâneas. Para executar manualmente: `python -m app.migrations`. Não há downgrade destrutivo automático; restaure um backup em outro banco para recuperação.
 
 ## Dados fictícios
 
-Para popular o banco local, execute em `backend`:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.seed_demo
-```
-
-Com Python e dependências disponíveis no ambiente, também pode usar `python -m app.seed_demo`. No Docker, após atualizar a imagem da API, use `docker compose exec api python -m app.seed_demo` para popular o PostgreSQL.
-
-A carga adiciona 5 serviços, 3 profissionais com jornada de segunda a sábado, 8 clientes, até 10 agendamentos e 3 bloqueios. Os nomes recebem `(Demo)`; os telefones são ilustrativos e os e-mails usam `example.com`. As reservas ativas ficam no próximo dia útil, e o histórico no dia útil anterior. A carga respeita conflitos e preserva cadastros e jornadas existentes. Repetir no mesmo dia não duplica os registros; executar em outro dia pode adicionar exemplos para novas datas. No SQLite, o comando cria um backup antes de alterar o banco. Os dados são inseridos apenas no banco configurado para a execução, sem sincronizar SQLite e PostgreSQL.
-
-## Ajustes de interface e fluxo
-
-O agendamento mostra o horário no resumo e, após reservar, uma confirmação dedicada com data, profissional e valor. Use **Fazer outro agendamento** para iniciar uma nova reserva. A agenda permite navegar pelo dia ou semana anterior/próximo e voltar para **Hoje**. Consultas de agenda, disponibilidade e histórico diferenciam carregamento, falha e resultado vazio. Os cadastros validam os dados antes do envio, e a jornada em edição é preservada durante a atualização dos cadastros. Para retirar todo o expediente de um profissional, remova os períodos e salve a jornada.
+Execute `python -m app.seed_demo` em `backend`, ou `docker compose exec api python -m app.seed_demo`. A carga cria serviços, profissionais, clientes, reservas e bloqueios marcados como Demo, preservando os dados existentes. Ela pertence apenas à barbearia inicial e não preenche os negócios cadastrados pelos donos. Não cria contas nem envia notificações para os contatos fictícios. Uma instalação vazia não publica automaticamente uma barbearia sem equipe; os dados Demo precisam ser carregados explicitamente.
 
 ## Testes
 
-Em `frontend`, execute `npm test` para verificar os fluxos da interface e `npm run build` para compilar. Em `backend`, execute `pytest -q`. Se o Python local não estiver disponível, na raiz execute `docker build -f backend/Dockerfile.test -t barberflow-test backend` e `docker run --rm barberflow-test`. Os testes cobrem reservas simultâneas, limites da jornada, cadastros, bloqueios, reagendamento, filtros da agenda e transições de status.
+```powershell
+# Em backend
+.\.venv\Scripts\python.exe -m pytest -q
+# Em frontend
+npm test
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
 
-## Escopo atual
+Para PostgreSQL, defina `TEST_DATABASE_URL` para um banco de testes. Cada teste usa um schema isolado, removido ao terminar. Nunca use um banco de produção para testes.
 
-A escolha de barbeiro identifica apenas o contexto da interface. Não há autenticação: quem acessar a API pode alterar cadastros e agendamentos. O Docker publica a API somente em `127.0.0.1`. Antes de disponibilizar o sistema na internet ou na rede local, implemente login e permissões reais. Pagamentos e relatórios fazem parte das próximas etapas. A tabela de bloqueios é criada automaticamente ao iniciar a API; mudanças futuras de esquema ainda precisam de migrações formais.
+O Playwright inicia API e frontend próprios, com banco temporário e contas exclusivas dos testes. Roda os fluxos em desktop e celular. Portas: 18001 e 14200. `E2E_PYTHON` permite indicar outro executável Python. O GitHub Actions verifica SQLite, PostgreSQL, testes do frontend, build e navegador.
 
-Referências de compatibilidade do Angular: [versões suportadas](https://angular.dev/reference/versions) e [estrutura do CLI](https://angular.dev/tools/cli/setup-local).
+## Organização e PR
+
+- `backend/app`: diretório/cadastro de barbearias, isolamento por espaço, autenticação, schemas, catálogo, agendamentos, financeiro, expediente, portal, notificações, migrações e backup.
+- `frontend/src/app`: escolha de barbearia, cadastro do dono, perfil/publicação do espaço, login da equipe, cadastros, grade de agenda, painel, financeiro, configurações e reserva do cliente.
+- `main`: versão inicial preservada.
+- `feat/barberflow-management`: melhorias em commits por etapa; destino do PR é `main`.
+
+Para disponibilizar a aplicação fora da máquina local, configure um domínio com HTTPS e os endereços do frontend em `BARBERFLOW_CORS_ORIGINS`. Tokens de sessão e links de reserva precisam de transporte protegido.
+
+Os componentes usam atualização explícita compatível com o estado atual da aplicação e Angular 22. Referência: [estratégias de detecção de mudanças](https://angular.dev/api/core/ChangeDetectionStrategy).
+
+## Compatibilidade com os dados anteriores
+
+Os registros anteriores ficam na barbearia inicial. Dados Demo aparecem como **Barbearia BarberFlow (Demo)**. Se ainda não houver administrador nesse espaço, escolha essa barbearia, abra **Sou da equipe** e use **Primeiro acesso: configurar barbearia** com a chave `BARBERFLOW_BOOTSTRAP_KEY`. Esse fluxo existe para assumir o espaço anterior; os novos negócios usam o cadastro público de dono. Links antigos de reserva continuam apontando para a barbearia inicial.
+
+As rotas de serviços, agenda, usuários e financeiro usam `/api/shops/{shop_id}/...`. O diretório e o cadastro de donos usam `/api/public/barbershops`. Links de cliente e equipe carregam a barbearia no fragmento da URL.

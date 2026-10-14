@@ -20,4 +20,8 @@ backend/.deps/
 *.pfx
 *.log
 *.pyc
+.test-artifacts/
+frontend/test-results/
+frontend/playwright-report/
+backend/backups/
 

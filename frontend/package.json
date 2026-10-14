@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "start": "ng serve --proxy-config proxy.conf.json",
-    "build": "ng build"
+    "build": "ng build",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@angular/common": "^22.0.0",
@@ -21,6 +22,7 @@
     "@angular/build": "^22.0.0",
     "@angular/cli": "^22.0.0",
     "@angular/compiler-cli": "^22.0.0",
+    "@playwright/test": "^1.64.1",
     "typescript": "~6.0.0"
   }
 }

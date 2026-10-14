@@ -2,33 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.database import Base, get_db
-from app.main import app
-
-
 ZONE = ZoneInfo("America/Fortaleza")
-
-
-@pytest.fixture
-def client(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}", connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(engine, autoflush=False, expire_on_commit=False)
-
-    def test_db():
-        with factory() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = test_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-    engine.dispose()
 
 
 def setup_schedule(client):

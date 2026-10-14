@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+from contextlib import closing
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -11,7 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine
-from .models import Appointment, Customer, Professional, ScheduleBlock, Service, WorkPeriod
+from .models import Appointment, Barbershop, Customer, Professional, ScheduleBlock, Service, WorkPeriod
 
 
 ZONE = ZoneInfo(os.getenv("BARBERFLOW_TIMEZONE", "America/Fortaleza"))
@@ -35,9 +36,19 @@ NAMES = ["Pedro Lima", "Bruno Rocha", "Gabriel Alves", "Mateus Souza",
 def seed_demo(db: Session, today: date | None = None) -> dict[str, int]:
     """Add missing demo records without replacing existing catalog or schedules."""
     today = today or datetime.now(ZONE).date()
+    if db.info.get("shop_id") not in (None, 1):
+        raise ValueError("A carga Demo pertence somente à barbearia inicial")
+    db.info["shop_id"] = 1
     counts = dict(services=0, professionals=0, customers=0, appointments=0, blocks=0)
     if db.bind.dialect.name == "sqlite":
         db.execute(text("BEGIN IMMEDIATE"))
+    shop = db.get(Barbershop, 1)
+    if shop is None:
+        shop = Barbershop(id=1, name="Barbearia BarberFlow (Demo)", slug="barberflow", published=True)
+        db.add(shop)
+        db.flush()
+    elif shop.name == "Barbearia BarberFlow":
+        shop.name, shop.published = "Barbearia BarberFlow (Demo)", True
 
     services = []
     for name, description, price, duration in SERVICES:
@@ -130,7 +141,7 @@ def seed_demo(db: Session, today: date | None = None) -> dict[str, int]:
         if not available(professional, start, end):
             continue
         db.add(Appointment(service_id=service.id, service_name=service.name,
-                           professional_id=professional.id, customer_name=customer.name,
+                           professional_id=professional.id, customer_id=customer.id, customer_name=customer.name,
                            customer_phone=customer.phone, starts_at=start, ends_at=end,
                            price=service.price, status=status))
         db.flush()
@@ -152,10 +163,11 @@ def main() -> None:
         database = Path(engine.url.database).resolve()
         if database.exists():
             backup = database.with_name(f"{database.stem}.backup-{datetime.now(timezone.utc):%Y%m%d-%H%M%S-%f}.db")
-            with sqlite3.connect(database) as source, sqlite3.connect(backup) as destination:
+            with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(backup)) as destination:
                 source.backup(destination)
             print(f"Backup criado: {backup.name}")
-    Base.metadata.create_all(engine)
+    from .migrations import migrate
+    migrate()
     with SessionLocal() as db:
         counts = seed_demo(db)
     print("Dados Demo adicionados: " + ", ".join(f"{key}={value}" for key, value in counts.items()))

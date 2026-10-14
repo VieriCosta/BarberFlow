@@ -5,27 +5,34 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
 const { Subject, of, forkJoin } = require('rxjs');
+class AuthService {}
+class ShopContext {}
 
 // Exercise the component's flow logic without a browser or live database.
-function component(api = {}) {
-  const source = fs.readFileSync(path.join(__dirname, '../src/app/app.component.ts'), 'utf8');
+function component(api = {}, kind = 'app') {
+  api.agendaHours ??= () => of([]);
+  const source = fs.readFileSync(path.join(__dirname, `../src/app/${kind}.component.ts`), 'utf8');
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, experimentalDecorators: true },
   }).outputText;
   const context = {
     exports: {}, sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-    Intl, Date,
+    Intl, Date, URLSearchParams, history: { replaceState() {} }, window: { location: { hash: '', origin: 'http://localhost:4200', pathname: '/' } },
     require(name) {
-      if (name === '@angular/core') return { Component: () => target => target, inject: () => api };
+      if (name === '@angular/core') return { ChangeDetectionStrategy: { Eager: 1 }, Input: () => () => {}, Output: () => () => {}, EventEmitter: class { emit() {} }, HostListener: () => () => {}, Component: () => target => target, inject: token => token === AuthService ? { user: () => ({ role: 'admin', shop_id: 1 }), canFinance: true, canManage: true, logout: () => of(undefined), clear() {} } : token === ShopContext ? { id: 1, shop: () => ({ id: 1 }), select() {}, clear() {} } : api };
       if (name === '@angular/common') return { CommonModule: {} };
       if (name === '@angular/forms') return { FormsModule: {} };
       if (name === 'rxjs') return { forkJoin: sources => forkJoin(Object.fromEntries(Object.entries(sources))) };
       if (name === './api.service') return { ApiService: {}, apiError: () => 'Falha na consulta' };
+      if (name === './auth.service') return { AuthService };
+      if (name === './shop-context.service') return { ShopContext };
+      if (name === './barbershops.service') return { BarbershopsService: {} };
+      if (name.endsWith('.component')) return {};
       throw new Error(name);
     },
   };
   vm.runInNewContext(compiled, context);
-  return new context.exports.AppComponent();
+  return new context.exports[kind === 'app' ? 'AppComponent' : 'CatalogComponent']();
 }
 
 test('agenda ignores an older response after the user changes the day', () => {
@@ -67,7 +74,7 @@ test('confirmed booking stays confirmed and cannot submit twice', () => {
 });
 
 test('refreshing administrative data preserves the unsaved work periods', () => {
-  const app = component({ services: () => of([]), professionals: () => of([{ id: 1, active: true, work_periods: [] }]) });
+  const app = component({ services: () => of([]), professionals: () => of([{ id: 1, active: true, work_periods: [] }]) }, 'catalog');
   app.tab = 'professionals';
   app.activeProfessionalId = app.selectedProfessionalId = 1;
   app.periods = [{ weekday: 0, starts_at: '09:00', ends_at: '12:00' }];
@@ -78,7 +85,7 @@ test('refreshing administrative data preserves the unsaved work periods', () => 
 
 test('an empty work schedule can be saved', () => {
   let saved;
-  const app = component({ savePeriods: (id, periods) => { saved = periods; return of({ id, work_periods: [] }); } });
+  const app = component({ savePeriods: (id, periods) => { saved = periods; return of({ id, work_periods: [] }); } }, 'catalog');
   app.selectedProfessionalId = 1;
   app.loadAdmin = () => {};
   app.savePeriods();
@@ -105,4 +112,33 @@ test('agenda navigation moves by one day or one week across month boundaries', (
   assert.equal(app.agendaDay, '2026-11-01');
   app.agendaView = 'week'; app.moveAgenda(-1);
   assert.equal(app.agendaDay, '2026-10-25');
+});
+
+test('switching shops clears customer details and invalidates a pending availability response', () => {
+  const pending = new Subject();
+  const app = component({ availability: () => pending });
+  app.booking.service_id = 1;
+  app.booking.customer_name = 'Private Customer';
+  app.booking.customer_phone = '85999991234';
+  app.booking.customer_email = 'private@example.com';
+  app.onBookingChange();
+  app.initializeShop = () => {};
+  app.chooseShop({ id: 2, name: 'Other Shop', published: true });
+  pending.next([{ professional_id: 1, starts_at: '2026-10-20T10:00:00-03:00' }]); pending.complete();
+  assert.equal(app.booking.customer_name, '');
+  assert.equal(app.booking.customer_phone, '');
+  assert.equal(app.booking.customer_email, '');
+  assert.equal(app.slots.length, 0);
+  assert.equal(app.confirmed, null);
+});
+
+test('a booking response from another shop cannot appear after switching shops', () => {
+  const pending = new Subject();
+  const app = component({ book: () => pending });
+  app.booking.customer_name = 'Private Customer'; app.booking.customer_phone = '85999991234';
+  app.selectedSlot = { professional_id: 1, starts_at: '2026-10-20T10:00:00-03:00' };
+  app.confirmBooking();
+  app.shopContext.id = 2;
+  pending.next({ id: 10, customer_name: 'Private Customer' }); pending.complete();
+  assert.equal(app.confirmed, null);
 });

@@ -40,6 +40,9 @@ export interface Appointment {
   ends_at: string;
   price: string;
   status: AppointmentStatus;
+  customer_id?: number;
+  manage_token?: string;
+  paid?: boolean;
 }
 export type AppointmentStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
 export type AgendaView = 'day' | 'week';
@@ -51,12 +54,14 @@ export interface ScheduleBlock {
   ends_at: string;
   reason: string;
 }
+export interface AgendaHours { professional_id: number; day: string; reason: string; periods: { starts_at: string; ends_at: string }[]; }
 export interface BookingPayload {
   service_id: number;
   professional_id: number | null;
   starts_at: string;
   customer_name: string;
   customer_phone: string;
+  customer_email?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -117,6 +122,11 @@ export class ApiService {
     let params = new HttpParams().set('day', day).set('view', view);
     if (professionalId) params = params.set('professional_id', professionalId);
     return this.http.get<ScheduleBlock[]>('/api/blocks', { params });
+  }
+  agendaHours(day: string, view: AgendaView = 'day', professionalId = 0): Observable<AgendaHours[]> {
+    let params = new HttpParams().set('day', day).set('view', view);
+    if (professionalId) params = params.set('professional_id', professionalId);
+    return this.http.get<AgendaHours[]>('/api/agenda-hours', { params });
   }
   createBlock(payload: { professional_id: number; starts_at: string; ends_at: string; reason: string }): Observable<ScheduleBlock> {
     return this.http.post<ScheduleBlock>('/api/blocks', payload);

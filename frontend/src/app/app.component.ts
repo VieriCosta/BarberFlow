@@ -1,23 +1,45 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { AgendaView, ApiService, Appointment, AppointmentStatus, Customer, Professional, ScheduleBlock, Service, Slot, WorkPeriod, apiError } from './api.service';
+import { AgendaHours, AgendaView, ApiService, Appointment, AppointmentStatus, Customer, Professional, ScheduleBlock, Service, Slot, WorkPeriod, apiError } from './api.service';
 
-type Tab = 'entry' | 'booking' | 'agenda' | 'services' | 'professionals' | 'customers';
+import { AuthService } from './auth.service';
+import { LoginComponent } from './login.component';
+import { DashboardComponent } from './dashboard.component';
+import { FinanceComponent } from './finance.component';
+import { SettingsComponent } from './settings.component';
+import { ReservationComponent } from './reservation.component';
+import { AgendaGridComponent } from './agenda-grid.component';
+import { CatalogComponent } from './catalog.component';
+import { DirectoryComponent } from './directory.component';
+import { Barbershop, ShopContext } from './shop-context.service';
+import { BarbershopsService } from './barbershops.service';
 
-@Component({
+type Tab = 'entry' | 'booking' | 'agenda' | 'services' | 'professionals' | 'customers' | 'dashboard' | 'finance' | 'settings' | 'reservation' | 'team';
+
+@Component({ changeDetection: ChangeDetectionStrategy.Eager,
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, LoginComponent, DashboardComponent, FinanceComponent, SettingsComponent, ReservationComponent, AgendaGridComponent, CatalogComponent, DirectoryComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })
 export class AppComponent implements OnInit {
   readonly api = inject(ApiService);
+  readonly auth = inject(AuthService);
+  readonly shopContext = inject(ShopContext);
+  private readonly shops = inject(BarbershopsService);
+  loadingShop = false;
+  shopError = '';
+  private publicRequest = 0;
+  private adminRequest = 0;
   readonly weekdays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-  tab: Tab = sessionStorage.getItem('barberflow-professional-id') ? 'agenda' : 'entry';
-  activeProfessionalId = Number(sessionStorage.getItem('barberflow-professional-id')) || 0;
+  manageToken = new URLSearchParams(window.location.hash.slice(1)).get('reservation') ?? '';
+  tab: Tab = this.manageToken ? 'reservation' : 'entry';
+  agendaLayout: 'grid' | 'list' = 'grid';
+  paymentAppointmentId = 0;
+  activeProfessionalId = 0;
   choiceProfessionalId = this.activeProfessionalId;
   notice = '';
   error = '';
@@ -30,12 +52,6 @@ export class AppComponent implements OnInit {
   agendaError = '';
   loadingManualSlots = false;
   manualSlotsError = '';
-  loadingCustomerHistory = false;
-  customerHistoryError = '';
-  customers: Customer[] = [];
-  customerHistory: Appointment[] = [];
-  private customerHistoryRequest = 0;
-  customerSearch = '';
   slots: Slot[] = [];
   loadingSlots = false;
   slotsError = '';
@@ -43,6 +59,7 @@ export class AppComponent implements OnInit {
   appointments: Appointment[] = [];
   timezone = 'America/Fortaleza';
   blocks: ScheduleBlock[] = [];
+  effectiveHours: AgendaHours[] = [];
   agendaView: AgendaView = 'day';
   agendaProfessionalId = this.activeProfessionalId;
   private agendaRequest = 0;
@@ -51,7 +68,7 @@ export class AppComponent implements OnInit {
     const get = (type: string): string => parts.find(part => part.type === type)?.value ?? '';
     return `${get('year')}-${get('month')}-${get('day')}`;
   })();
-  booking = { service_id: 0, professional_id: 0, day: this.today, customer_name: '', customer_phone: '' };
+  booking = { service_id: 0, professional_id: 0, day: this.today, customer_name: '', customer_phone: '', customer_email: '' };
   selectedSlot: Slot | null = null;
   confirmed: Appointment | null = null;
   agendaDay = this.today;
@@ -62,18 +79,43 @@ export class AppComponent implements OnInit {
   manualSlots: Slot[] = [];
   manualSlot: Slot | null = null;
   private manualRequest = 0;
-  newService = { name: '', description: '', price: 0, duration_minutes: 30 };
-  editingServiceId = 0;
-  newProfessional = { name: '', service_ids: [] as number[] };
-  editingProfessionalId = 0;
-  editingCustomerId = 0;
-  customerForm = { name: '', phone: '', email: '', notes: '' };
-  selectedProfessionalId = this.activeProfessionalId;
-  periods: WorkPeriod[] = [];
+
+  @HostListener('window:hashchange')
+  openReservationLink(): void {
+    this.openLocation();
+  }
 
   ngOnInit(): void {
+    this.openLocation();
+  }
+
+  private openLocation(): void {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const id = Number(fragment.get('shop')) || (fragment.has('reservation') ? 1 : this.auth.token ? this.shopContext.id || 1 : 0);
+    this.manageToken = fragment.get('reservation') ?? '';
+    if (!id) { this.shopContext.clear(); this.loadingShop = false; return; }
+    if (this.shopContext.shop()?.id === id) {
+      this.tab = this.manageToken ? 'reservation' : fragment.get('team') ? 'team' : 'booking';
+      this.clearMessages(); return;
+    }
+    if (this.auth.user() && this.auth.user()?.shop_id !== id) { this.auth.logout().subscribe({ error: () => {} }); this.auth.clear(); }
+    this.resetShopData();
+    this.manageToken = fragment.get('reservation') ?? '';
+    this.loadingShop = true; this.shopError = '';
+    this.shopContext.prepare(id);
+    this.shops.get(id).subscribe({ next: shop => {
+      if (this.shopContext.id !== id) return;
+      this.shopContext.select(shop); this.loadingShop = false;
+      this.tab = this.manageToken ? 'reservation' : fragment.get('team') ? 'team' : 'booking';
+      this.initializeShop();
+    }, error: error => { if (this.shopContext.id !== id) return; this.loadingShop = false; this.shopContext.clear(); this.shopError = apiError(error); } });
+  }
+
+  private initializeShop(restore = true): void {
+    const shopId = this.shopContext.id;
     sessionStorage.removeItem('barberflow-admin-key');
     this.api.publicConfig().subscribe({ next: config => {
+      if (this.shopContext.id !== shopId) return;
       const previous = this.today;
       this.timezone = config.timezone;
       this.today = this.dateInZone(new Date(), this.timezone);
@@ -83,46 +125,80 @@ export class AppComponent implements OnInit {
       if (this.manualForm.day === previous) this.manualForm.day = this.today;
     }});
     this.loadPublic();
+    const token = this.auth.token;
+    if (restore && token && !this.manageToken) this.auth.restore().subscribe({ next: () => { if (this.shopContext.id === shopId && this.auth.token === token) this.signedIn(); }, error: () => { if (this.shopContext.id === shopId && this.auth.token === token) this.auth.clear(); } });
+  }
+
+  chooseShop(shop: Barbershop, team = false): void {
+    if (this.auth.user() && this.auth.user()?.shop_id !== shop.id) { this.auth.logout().subscribe({ error: () => {} }); this.auth.clear(); }
+    this.resetShopData();
+    this.shopContext.select(shop);
+    history.replaceState(null, '', window.location.pathname + '#shop=' + shop.id + (team ? '&team=1' : ''));
+    this.tab = team ? 'team' : 'booking';
+    this.initializeShop();
+  }
+
+  shopRegistered(shop: Barbershop): void {
+    this.resetShopData(); this.shopContext.select(shop);
+    history.replaceState(null, '', window.location.pathname + '#shop=' + shop.id + '&team=1');
+    this.initializeShop(false);
+    this.signedIn(); this.tab = 'services';
+    this.notice = 'Sua barbearia foi criada. Cadastre os serviços, os profissionais e a jornada; depois publique em Configurações.';
+  }
+
+  goDirectory(): void {
+    if (this.auth.token) this.auth.logout().subscribe({ error: () => {} });
+    this.auth.clear(); this.resetShopData(); this.shopContext.clear(); this.manageToken = '';
+    this.loadingShop = false; this.shopError = '';
+    this.tab = 'entry'; history.replaceState(null, '', window.location.pathname);
+  }
+
+  private resetShopData(): void {
+    ++this.publicRequest; ++this.adminRequest; ++this.agendaRequest; ++this.manualRequest; ++this.availabilityRequest;
+    this.services = []; this.professionals = []; this.appointments = []; this.blocks = []; this.effectiveHours = [];
+    this.slots = []; this.manualSlots = []; this.manualSlot = null; this.selectedSlot = null; this.confirmed = null;
+    this.activeProfessionalId = 0; this.agendaProfessionalId = 0; this.rescheduleId = 0; this.saving = false;
+    this.loadingAgenda = false; this.loadingSlots = false; this.loadingServices = this.loadingProfessionals = true;
+    this.booking = { service_id: 0, professional_id: 0, day: this.today, customer_name: '', customer_phone: '', customer_email: '' };
+    this.manualForm = { service_id: 0, professional_id: 0, day: this.today, customer_name: '', customer_phone: '' };
+    this.blockForm.professional_id = 0; this.manageToken = ''; this.clearMessages();
   }
 
   setTab(tab: Tab): void {
+    if (tab !== 'entry' && tab !== 'booking' && tab !== 'reservation' && tab !== 'team' && !this.auth.user()) { this.tab = 'team'; this.error = 'Entre com seu usuário e senha para abrir a área interna.'; return; }
+    if (['services', 'professionals', 'settings'].includes(tab) && !this.auth.canManage) return;
+    if (['customers', 'dashboard', 'finance'].includes(tab) && !this.auth.canFinance) return;
+    if (tab !== 'reservation' && this.manageToken) { this.manageToken = ''; history.replaceState(null, '', window.location.pathname + '#shop=' + this.shopContext.id); }
     this.tab = tab;
     this.clearMessages();
-    if (tab !== 'booking' && tab !== 'entry' && this.activeProfessionalId) this.loadAdmin();
+    if (tab !== 'booking' && tab !== 'entry' && tab !== 'team' && this.activeProfessionalId) this.loadAdmin();
   }
 
-  enterAsProfessional(): void {
-    if (this.choiceProfessionalId === -1 && !this.professionals.some(p => p.active)) {
-      this.activeProfessionalId = -1;
-      sessionStorage.setItem('barberflow-professional-id', '-1');
-      this.agendaProfessionalId = 0;
-      this.tab = this.services.some(service => service.active) ? 'professionals' : 'services';
-      this.notice = 'Cadastre o primeiro serviço e barbeiro para começar.';
-      this.error = '';
-      this.loadAdmin();
-      return;
-    }
-    const professional = this.professionals.find(p => p.id === this.choiceProfessionalId && p.active);
-    if (!professional) { this.error = 'Escolha um barbeiro ativo para entrar.'; return; }
-    this.activeProfessionalId = professional.id;
-    sessionStorage.setItem('barberflow-professional-id', String(professional.id));
-    this.agendaProfessionalId = professional.id;
-    this.blockForm.professional_id = professional.id;
-    this.manualForm.professional_id = professional.id;
-    this.selectProfessional(professional.id);
+  signedIn(): void {
+    const user = this.auth.user();
+    if (!user) return;
+    this.activeProfessionalId = user.professional_id ?? -1;
+    this.agendaProfessionalId = user.professional_id ?? 0;
+    this.manualForm.professional_id = user.professional_id ?? 0;
+    this.blockForm.professional_id = user.professional_id ?? 0;
     this.tab = 'agenda';
-    this.notice = `Você está vendo a barbearia como ${professional.name}.`;
-    this.error = '';
     this.loadAdmin();
+  }
+
+  enterAsProfessional(): void { if (this.auth.user()) this.signedIn(); else this.tab = 'entry'; }
+
+  logout(): void {
+    this.auth.logout().subscribe({ next: () => {}, error: () => {} });
+    this.auth.clear();
+    this.switchProfessional();
+    this.loadPublic();
   }
 
   switchProfessional(): void {
     ++this.agendaRequest;
     ++this.manualRequest;
-    ++this.customerHistoryRequest;
     this.loadingAgenda = false;
     this.loadingManualSlots = false;
-    this.loadingCustomerHistory = false;
     this.rescheduleId = 0;
     this.manualSlot = null;
     this.manualSlots = [];
@@ -151,46 +227,42 @@ export class AppComponent implements OnInit {
   clearMessages(): void { this.notice = ''; this.error = ''; }
 
   loadPublic(): void {
+    const request = ++this.publicRequest;
     this.api.publicServices().subscribe({
-      next: services => { this.services = services; this.loadingServices = false; },
+      next: services => { if (request !== this.publicRequest) return; this.services = services; this.loadingServices = false; },
       error: error => { this.loadingServices = false; this.error = apiError(error); },
     });
     this.api.publicProfessionals().subscribe({
       next: professionals => {
+        if (request !== this.publicRequest) return;
         this.loadingProfessionals = false;
         this.professionals = professionals;
         if (this.activeProfessionalId > 0 && !professionals.some(p => p.id === this.activeProfessionalId))
           this.switchProfessional();
-        else if (this.activeProfessionalId > 0) this.selectProfessional(this.activeProfessionalId);
-        if (this.activeProfessionalId && this.tab !== 'entry' && this.tab !== 'booking') this.loadAdmin();
+        if (this.activeProfessionalId && this.tab !== 'entry' && this.tab !== 'booking' && this.tab !== 'reservation') this.loadAdmin();
       },
       error: error => { this.loadingProfessionals = false; this.error = apiError(error); },
     });
   }
 
-  loadAdmin(refreshPeriods = false): void {
+  loadAdmin(): void {
+    const request = ++this.adminRequest;
+    ++this.publicRequest;
     this.api.services().subscribe({
-      next: services => this.services = services,
+      next: services => { if (request === this.adminRequest) { this.services = services; this.loadingServices = false; } },
       error: error => this.error = apiError(error),
     });
     this.api.professionals().subscribe({
       next: professionals => {
+        if (request !== this.adminRequest) return;
+        this.loadingProfessionals = false;
         this.professionals = professionals;
         if (this.activeProfessionalId > 0 && !professionals.some(p => p.id === this.activeProfessionalId && p.active))
           this.switchProfessional();
-        else if (this.selectedProfessionalId && (refreshPeriods || this.tab !== 'professionals')) this.selectProfessional(this.selectedProfessionalId);
       },
       error: error => this.error = apiError(error),
     });
     this.loadAppointments();
-    this.loadCustomers();
-  }
-
-  loadCustomers(): void {
-    this.api.customers().subscribe({
-      next: customers => this.customers = customers,
-      error: error => this.error = apiError(error),
-    });
   }
 
   loadAppointments(): void {
@@ -202,11 +274,13 @@ export class AppComponent implements OnInit {
     forkJoin({
       appointments: this.api.appointments(this.agendaDay, this.agendaView, this.agendaProfessionalId),
       blocks: this.api.blocks(this.agendaDay, this.agendaView, this.agendaProfessionalId),
+      hours: this.api.agendaHours(this.agendaDay, this.agendaView, this.agendaProfessionalId),
     }).subscribe({
       next: result => {
         if (request !== this.agendaRequest) return;
         this.appointments = result.appointments;
         this.blocks = result.blocks;
+        this.effectiveHours = result.hours;
         this.loadingAgenda = false;
       },
       error: error => {
@@ -242,6 +316,8 @@ export class AppComponent implements OnInit {
   }
 
   dailyHours(professional: Professional, day: string): string {
+    const effective = this.effectiveHours.find(h => h.professional_id === professional.id && h.day === day);
+    if (effective) return (effective.periods.length ? effective.periods.map(p => `${p.starts_at}–${p.ends_at}`).join(' · ') : 'Sem expediente') + (effective.reason ? ` (${effective.reason})` : '');
     const weekday = (new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7;
     const periods = professional.work_periods.filter(period => period.weekday === weekday);
     return periods.length ? periods.map(period => `${period.starts_at}–${period.ends_at}`).join(' · ') : 'Sem expediente';
@@ -270,16 +346,18 @@ export class AppComponent implements OnInit {
   }
 
   changeStatus(appointment: Appointment, status: AppointmentStatus): void {
+    const shopId = this.shopContext.id;
     this.saving = true;
     this.clearMessages();
     this.api.updateStatus(appointment.id, status).subscribe({
       next: updated => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.notice = `Atendimento #${updated.id}: ${this.statusLabel(updated.status).toLowerCase()}.`;
         this.loadAppointments();
-        this.loadCustomers();
-      },
-      error: error => { this.saving = false; this.error = apiError(error); },
+          },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); },
     });
   }
 
@@ -291,6 +369,7 @@ export class AppComponent implements OnInit {
   }
 
   saveReschedule(): void {
+    const shopId = this.shopContext.id;
     if (this.saving) return;
     if (!this.rescheduleId || !this.rescheduleForm.professional_id || !this.rescheduleForm.day || !this.rescheduleForm.time) {
       this.error = 'Informe a nova data, o horário e o profissional.';
@@ -303,17 +382,20 @@ export class AppComponent implements OnInit {
       starts_at: this.localDateTime(this.rescheduleForm.day, this.rescheduleForm.time),
     }).subscribe({
       next: updated => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.rescheduleId = 0;
         this.agendaDay = updated.starts_at.slice(0, 10);
         this.notice = `Agendamento #${updated.id} reagendado para ${this.formatDay(updated.starts_at)} às ${this.formatTime(updated.starts_at)}.`;
         this.loadAppointments();
       },
-      error: error => { this.saving = false; this.error = apiError(error); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); },
     });
   }
 
   saveBlock(): void {
+    const shopId = this.shopContext.id;
     if (this.saving) return;
     const form = this.blockForm;
     if (!form.professional_id || !form.day || !form.starts_at || !form.ends_at) {
@@ -330,22 +412,27 @@ export class AppComponent implements OnInit {
       starts_at: this.localDateTime(form.day, form.starts_at),
       ends_at: this.localDateTime(form.day, form.ends_at), reason: form.reason }).subscribe({
       next: () => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.agendaDay = form.day;
         this.blockForm.reason = '';
         this.notice = 'Horário bloqueado.';
         this.loadAppointments();
       },
-      error: error => { this.saving = false; this.error = apiError(error); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); },
     });
   }
 
   removeBlock(block: ScheduleBlock): void {
+    const shopId = this.shopContext.id;
     this.saving = true;
     this.clearMessages();
     this.api.deleteBlock(block.id).subscribe({
-      next: () => { this.saving = false; this.notice = 'Bloqueio removido.'; this.loadAppointments(); },
-      error: error => { this.saving = false; this.error = apiError(error); },
+      next: () => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.notice = 'Bloqueio removido.'; this.loadAppointments(); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); },
     });
   }
 
@@ -367,6 +454,7 @@ export class AppComponent implements OnInit {
   }
 
   saveManualBooking(): void {
+    const shopId = this.shopContext.id;
     if (this.saving) return;
     if (!this.manualSlot || !this.manualForm.customer_name.trim() || !this.manualForm.customer_phone.trim()) {
       this.error = 'Escolha um horário e informe nome e telefone.';
@@ -379,6 +467,7 @@ export class AppComponent implements OnInit {
       starts_at: this.manualSlot.starts_at, customer_name: this.manualForm.customer_name,
       customer_phone: this.manualForm.customer_phone }).subscribe({
       next: updated => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.agendaDay = updated.starts_at.slice(0, 10);
         this.manualForm.customer_name = '';
@@ -386,9 +475,9 @@ export class AppComponent implements OnInit {
         this.loadManualSlots();
         this.notice = `Agendamento #${updated.id} criado.`;
         this.loadAppointments();
-        this.loadCustomers();
       },
-      error: error => { this.saving = false; this.error = apiError(error); this.loadManualSlots(); this.error = apiError(error); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); this.loadManualSlots(); this.error = apiError(error); },
     });
   }
 
@@ -455,6 +544,7 @@ export class AppComponent implements OnInit {
   }
 
   confirmBooking(): void {
+    const shopId = this.shopContext.id;
     if (this.saving || this.confirmed) return;
     if (!this.selectedSlot || !this.booking.customer_name.trim() || !this.booking.customer_phone.trim()) {
       this.error = 'Escolha um horário e informe nome e telefone.';
@@ -469,8 +559,10 @@ export class AppComponent implements OnInit {
       starts_at: this.selectedSlot.starts_at,
       customer_name: this.booking.customer_name,
       customer_phone: this.booking.customer_phone,
+      customer_email: this.booking.customer_email.trim() || null,
     }).subscribe({
       next: appointment => {
+        if (this.shopContext.id !== shopId) return;
         this.confirmed = appointment;
         this.selectedSlot = null;
         this.saving = false;
@@ -480,6 +572,7 @@ export class AppComponent implements OnInit {
         this.notice = `Agendamento #${appointment.id} confirmado.`;
       },
       error: error => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.error = apiError(error);
         this.onBookingChange();
@@ -488,200 +581,12 @@ export class AppComponent implements OnInit {
     });
   }
 
-  addService(): void {
-    if (this.saving) return;
-    if (this.newService.name.trim().length < 2 || !Number.isFinite(this.newService.price) || this.newService.price < 0
-      || !Number.isInteger(this.newService.duration_minutes) || this.newService.duration_minutes < 1 || this.newService.duration_minutes > 480) {
-      this.error = 'Informe um nome válido, preço a partir de R$ 0 e duração de 1 a 480 minutos.';
-      return;
-    }
-    this.saving = true;
-    this.clearMessages();
-    const request = this.editingServiceId
-      ? this.api.updateService(this.editingServiceId, this.newService)
-      : this.api.createService(this.newService);
-    request.subscribe({
-      next: service => {
-        this.saving = false;
-        this.notice = `Serviço ${service.name} ${this.editingServiceId ? 'atualizado' : 'cadastrado'}.`;
-        const firstSetupService = this.activeProfessionalId === -1 && !this.hasActiveProfessionals() && !this.editingServiceId;
-        this.cancelServiceEdit();
-        if (firstSetupService) {
-          this.tab = 'professionals';
-          this.notice = `Serviço ${service.name} cadastrado. Agora cadastre o primeiro barbeiro.`;
-        }
-        this.loadAdmin();
-      },
-      error: error => { this.saving = false; this.error = apiError(error); },
-    });
-  }
-
-  editService(service: Service): void {
-    this.editingServiceId = service.id;
-    this.newService = { name: service.name, description: service.description,
-      price: Number(service.price), duration_minutes: service.duration_minutes };
-    this.clearMessages();
-  }
-
-  cancelServiceEdit(): void {
-    this.editingServiceId = 0;
-    this.newService = { name: '', description: '', price: 0, duration_minutes: 30 };
-  }
-
-  changeServiceActive(service: Service): void {
-    this.clearMessages();
-    this.api.updateService(service.id, { active: !service.active }).subscribe({
-      next: updated => { this.notice = `${updated.name} ${updated.active ? 'reativado' : 'inativado'}.`; this.loadAdmin(); },
-      error: error => this.error = apiError(error),
-    });
-  }
-
-  toggleService(id: number, checked: boolean): void {
-    this.newProfessional.service_ids = checked
-      ? [...this.newProfessional.service_ids, id]
-      : this.newProfessional.service_ids.filter(value => value !== id);
-  }
-
-  addProfessional(): void {
-    if (this.saving) return;
-    if (this.newProfessional.name.trim().length < 2) { this.error = 'Informe o nome do profissional com pelo menos 2 caracteres.'; return; }
-    if (!this.newProfessional.service_ids.length) {
-      this.error = 'Selecione pelo menos um serviço.';
-      return;
-    }
-    this.saving = true;
-    this.clearMessages();
-    const request = this.editingProfessionalId
-      ? this.api.updateProfessional(this.editingProfessionalId, this.newProfessional)
-      : this.api.createProfessional(this.newProfessional);
-    request.subscribe({
-      next: professional => {
-        this.saving = false;
-        this.notice = `${professional.name} ${this.editingProfessionalId ? 'atualizado' : 'cadastrado'}.`;
-        if (this.activeProfessionalId === -1) {
-          this.activeProfessionalId = professional.id;
-          this.choiceProfessionalId = professional.id;
-          this.agendaProfessionalId = professional.id;
-          this.blockForm.professional_id = professional.id;
-          this.manualForm.professional_id = professional.id;
-          sessionStorage.setItem('barberflow-professional-id', String(professional.id));
-          this.notice = `${professional.name} cadastrado. Defina os horários na jornada de trabalho.`;
-        }
-        this.cancelProfessionalEdit();
-        this.selectedProfessionalId = professional.id;
-        this.loadAdmin(true);
-      },
-      error: error => { this.saving = false; this.error = apiError(error); },
-    });
-  }
-
-  editProfessional(professional: Professional): void {
-    this.editingProfessionalId = professional.id;
-    this.newProfessional = { name: professional.name, service_ids: [...professional.service_ids] };
-    this.clearMessages();
-  }
-
-  cancelProfessionalEdit(): void {
-    this.editingProfessionalId = 0;
-    this.newProfessional = { name: '', service_ids: [] };
-  }
-
-  changeProfessionalActive(professional: Professional): void {
-    this.clearMessages();
-    this.api.updateProfessional(professional.id, { active: !professional.active }).subscribe({
-      next: updated => { this.notice = `${updated.name} ${updated.active ? 'reativado' : 'inativado'}.`; this.loadAdmin(); },
-      error: error => this.error = apiError(error),
-    });
-  }
-
-  filteredCustomers(): Customer[] {
-    const query = this.customerSearch.trim().toLocaleLowerCase('pt-BR');
-    const digits = query.replace(/\D/g, '');
-    if (!query) return this.customers;
-    return this.customers.filter(customer => customer.name.toLocaleLowerCase('pt-BR').includes(query)
-      || (digits.length >= 3 && customer.phone.includes(digits)));
-  }
-
-  editCustomer(customer: Customer): void {
-    const request = ++this.customerHistoryRequest;
-    this.editingCustomerId = customer.id;
-    this.customerForm = { name: customer.name, phone: customer.phone,
-      email: customer.email ?? '', notes: customer.notes };
-    this.customerHistory = [];
-    this.loadingCustomerHistory = true;
-    this.customerHistoryError = '';
-    this.clearMessages();
-    this.api.customerAppointments(customer.id).subscribe({
-      next: appointments => { if (request === this.customerHistoryRequest) { this.customerHistory = appointments; this.loadingCustomerHistory = false; } },
-      error: error => { if (request === this.customerHistoryRequest) { this.customerHistoryError = apiError(error); this.loadingCustomerHistory = false; } },
-    });
-  }
-
-  newCustomer(): void {
-    this.loadingCustomerHistory = false;
-    ++this.customerHistoryRequest;
-    this.editingCustomerId = 0;
-    this.customerHistory = [];
-    this.customerForm = { name: '', phone: '', email: '', notes: '' };
-    this.clearMessages();
-  }
-
-  saveCustomer(): void {
-    if (this.saving || !this.validCustomer(this.customerForm.name, this.customerForm.phone)) return;
-    if (this.customerForm.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.customerForm.email.trim())) {
-      this.error = 'Informe um e-mail válido ou deixe o campo vazio.';
-      return;
-    }
-    this.saving = true;
-    this.clearMessages();
-    const payload = { ...this.customerForm, email: this.customerForm.email.trim() || null };
-    const request = this.editingCustomerId
-      ? this.api.updateCustomer(this.editingCustomerId, payload)
-      : this.api.createCustomer(payload);
-    request.subscribe({
-      next: customer => {
-        this.saving = false;
-        const message = `Cliente ${customer.name} ${this.editingCustomerId ? 'atualizado' : 'cadastrado'}.`;
-        this.editCustomer(customer);
-        this.notice = message;
-        this.loadCustomers();
-      },
-      error: error => { this.saving = false; this.error = apiError(error); },
-    });
-  }
-
-  selectProfessional(id: number): void {
-    this.selectedProfessionalId = id;
-    this.periods = this.professionals.find(p => p.id === id)?.work_periods.map(period => ({ ...period })) ?? [];
-  }
-
-  addPeriod(): void { this.periods.push({ weekday: 0, starts_at: '09:00', ends_at: '18:00' }); }
-  applyStandardPeriods(): void {
-    this.periods = Array.from({ length: 6 }, (_, weekday) => [
-      { weekday, starts_at: '09:00', ends_at: '12:00' },
-      { weekday, starts_at: '13:00', ends_at: '18:00' },
-    ]).flat();
-  }
-  removePeriod(index: number): void { this.periods.splice(index, 1); }
-
-  savePeriods(): void {
-    if (this.saving || !this.selectedProfessionalId) return;
-    if (this.periods.some(period => !period.starts_at || !period.ends_at || period.ends_at <= period.starts_at)) {
-      this.error = 'Em cada período, informe um fim depois do início.';
-      return;
-    }
-    this.saving = true;
-    this.clearMessages();
-    this.api.savePeriods(this.selectedProfessionalId, this.periods).subscribe({
-      next: professional => {
-        this.saving = false;
-        this.professionals = this.professionals.map(item => item.id === professional.id ? professional : item);
-        this.selectProfessional(professional.id);
-        this.notice = 'Jornada salva. Os horários já estão disponíveis para agendamento.';
-        this.loadAdmin();
-      },
-      error: error => { this.saving = false; this.error = apiError(error); },
-    });
+  reservationLink(): string { return this.confirmed?.manage_token ? window.location.origin + window.location.pathname + '#shop=' + this.shopContext.id + '&reservation=' + encodeURIComponent(this.confirmed.manage_token) : ''; }
+  openPayment(appointment: Appointment): void { this.paymentAppointmentId = appointment.id; this.setTab('finance'); }
+  selectGridAppointment(appointment: Appointment): void {
+    this.agendaLayout = 'list';
+    if (appointment.status === 'scheduled') this.openReschedule(appointment);
+    setTimeout(() => document.getElementById('appointment-' + appointment.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
   }
 
   serviceName(id: number): string { return this.services.find(service => service.id === id)?.name ?? 'Serviço'; }
@@ -689,6 +594,7 @@ export class AppComponent implements OnInit {
   startNewBooking(): void {
     this.booking.customer_name = '';
     this.booking.customer_phone = '';
+    this.booking.customer_email = '';
     this.onBookingChange();
   }
   get bookingStep(): number {

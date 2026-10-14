@@ -14,14 +14,61 @@ services:
       retries: 10
   api:
     build: ./backend
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://barberflow:${POSTGRES_PASSWORD}@db:5432/barberflow
       BARBERFLOW_TIMEZONE: America/Fortaleza
       BARBERFLOW_CORS_ORIGINS: http://localhost:4200
+      BARBERFLOW_BOOTSTRAP_KEY: ${BARBERFLOW_BOOTSTRAP_KEY:?Defina BARBERFLOW_BOOTSTRAP_KEY no arquivo .env}
+      BARBERFLOW_CUSTOMER_CHANGE_HOURS: ${BARBERFLOW_CUSTOMER_CHANGE_HOURS:-2}
+      BARBERFLOW_NOTIFICATION_WEBHOOK: ${BARBERFLOW_NOTIFICATION_WEBHOOK:-}
+      BARBERFLOW_SMTP_HOST: ${BARBERFLOW_SMTP_HOST:-}
     ports:
       - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      db:
+        condition: service_healthy
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    profiles: [notifications]
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://barberflow:${POSTGRES_PASSWORD}@db:5432/barberflow
+      BARBERFLOW_TIMEZONE: America/Fortaleza
+      BARBERFLOW_NOTIFICATION_WEBHOOK: ${BARBERFLOW_NOTIFICATION_WEBHOOK:-}
+      BARBERFLOW_NOTIFICATION_SECRET: ${BARBERFLOW_NOTIFICATION_SECRET:-}
+      BARBERFLOW_SMTP_HOST: ${BARBERFLOW_SMTP_HOST:-}
+      BARBERFLOW_SMTP_PORT: ${BARBERFLOW_SMTP_PORT:-587}
+      BARBERFLOW_SMTP_FROM: ${BARBERFLOW_SMTP_FROM:-}
+      BARBERFLOW_SMTP_USERNAME: ${BARBERFLOW_SMTP_USERNAME:-}
+      BARBERFLOW_SMTP_PASSWORD: ${BARBERFLOW_SMTP_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+  backup:
+    image: postgres:18
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/backup-postgres.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: barberflow
+      PGDATABASE: barberflow
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_INTERVAL_SECONDS: 86400
+    volumes:
+      - ./scripts/backup-postgres.sh:/scripts/backup-postgres.sh:ro
+      - barberflow_backups:/backups
     depends_on:
       db:
         condition: service_healthy
 volumes:
   barberflow_db:
+  barberflow_backups:
