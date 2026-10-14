@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .migrations import migrate
 from .auth import router as auth_router
 from .booking import app as booking_router
+from .finance import router as finance_router
 from .schedule import router as schedule_router
 
 
@@ -21,6 +22,7 @@ app.add_middleware(CORSMiddleware,
     allow_headers=["Content-Type", "Authorization", "Bootstrap-Key"])
 app.include_router(auth_router)
 app.include_router(booking_router)
+app.include_router(finance_router)
 app.include_router(schedule_router)
 
 from .customer_portal import router as portal_router
