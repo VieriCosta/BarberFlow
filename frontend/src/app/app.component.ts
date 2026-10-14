@@ -12,19 +12,28 @@ import { SettingsComponent } from './settings.component';
 import { ReservationComponent } from './reservation.component';
 import { AgendaGridComponent } from './agenda-grid.component';
 import { CatalogComponent } from './catalog.component';
+import { DirectoryComponent } from './directory.component';
+import { Barbershop, ShopContext } from './shop-context.service';
+import { BarbershopsService } from './barbershops.service';
 
-type Tab = 'entry' | 'booking' | 'agenda' | 'services' | 'professionals' | 'customers' | 'dashboard' | 'finance' | 'settings' | 'reservation';
+type Tab = 'entry' | 'booking' | 'agenda' | 'services' | 'professionals' | 'customers' | 'dashboard' | 'finance' | 'settings' | 'reservation' | 'team';
 
 @Component({ changeDetection: ChangeDetectionStrategy.Eager,
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, LoginComponent, DashboardComponent, FinanceComponent, SettingsComponent, ReservationComponent, AgendaGridComponent, CatalogComponent],
+  imports: [CommonModule, FormsModule, LoginComponent, DashboardComponent, FinanceComponent, SettingsComponent, ReservationComponent, AgendaGridComponent, CatalogComponent, DirectoryComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })
 export class AppComponent implements OnInit {
   readonly api = inject(ApiService);
   readonly auth = inject(AuthService);
+  readonly shopContext = inject(ShopContext);
+  private readonly shops = inject(BarbershopsService);
+  loadingShop = false;
+  shopError = '';
+  private publicRequest = 0;
+  private adminRequest = 0;
   readonly weekdays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
   manageToken = new URLSearchParams(window.location.hash.slice(1)).get('reservation') ?? '';
   tab: Tab = this.manageToken ? 'reservation' : 'entry';
@@ -73,14 +82,40 @@ export class AppComponent implements OnInit {
 
   @HostListener('window:hashchange')
   openReservationLink(): void {
-    this.manageToken = new URLSearchParams(window.location.hash.slice(1)).get('reservation') ?? '';
-    this.tab = this.manageToken ? 'reservation' : 'entry';
-    this.clearMessages();
+    this.openLocation();
   }
 
   ngOnInit(): void {
+    this.openLocation();
+  }
+
+  private openLocation(): void {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const id = Number(fragment.get('shop')) || (fragment.has('reservation') ? 1 : this.auth.token ? this.shopContext.id || 1 : 0);
+    this.manageToken = fragment.get('reservation') ?? '';
+    if (!id) { this.shopContext.clear(); this.loadingShop = false; return; }
+    if (this.shopContext.shop()?.id === id) {
+      this.tab = this.manageToken ? 'reservation' : fragment.get('team') ? 'team' : 'booking';
+      this.clearMessages(); return;
+    }
+    if (this.auth.user() && this.auth.user()?.shop_id !== id) { this.auth.logout().subscribe({ error: () => {} }); this.auth.clear(); }
+    this.resetShopData();
+    this.manageToken = fragment.get('reservation') ?? '';
+    this.loadingShop = true; this.shopError = '';
+    this.shopContext.prepare(id);
+    this.shops.get(id).subscribe({ next: shop => {
+      if (this.shopContext.id !== id) return;
+      this.shopContext.select(shop); this.loadingShop = false;
+      this.tab = this.manageToken ? 'reservation' : fragment.get('team') ? 'team' : 'booking';
+      this.initializeShop();
+    }, error: error => { if (this.shopContext.id !== id) return; this.loadingShop = false; this.shopContext.clear(); this.shopError = apiError(error); } });
+  }
+
+  private initializeShop(restore = true): void {
+    const shopId = this.shopContext.id;
     sessionStorage.removeItem('barberflow-admin-key');
     this.api.publicConfig().subscribe({ next: config => {
+      if (this.shopContext.id !== shopId) return;
       const previous = this.today;
       this.timezone = config.timezone;
       this.today = this.dateInZone(new Date(), this.timezone);
@@ -90,17 +125,53 @@ export class AppComponent implements OnInit {
       if (this.manualForm.day === previous) this.manualForm.day = this.today;
     }});
     this.loadPublic();
-    if (this.auth.token && !this.manageToken) this.auth.restore().subscribe({ next: () => this.signedIn(), error: () => this.auth.clear() });
+    const token = this.auth.token;
+    if (restore && token && !this.manageToken) this.auth.restore().subscribe({ next: () => { if (this.shopContext.id === shopId && this.auth.token === token) this.signedIn(); }, error: () => { if (this.shopContext.id === shopId && this.auth.token === token) this.auth.clear(); } });
+  }
+
+  chooseShop(shop: Barbershop, team = false): void {
+    if (this.auth.user() && this.auth.user()?.shop_id !== shop.id) { this.auth.logout().subscribe({ error: () => {} }); this.auth.clear(); }
+    this.resetShopData();
+    this.shopContext.select(shop);
+    history.replaceState(null, '', window.location.pathname + '#shop=' + shop.id + (team ? '&team=1' : ''));
+    this.tab = team ? 'team' : 'booking';
+    this.initializeShop();
+  }
+
+  shopRegistered(shop: Barbershop): void {
+    this.resetShopData(); this.shopContext.select(shop);
+    history.replaceState(null, '', window.location.pathname + '#shop=' + shop.id + '&team=1');
+    this.initializeShop(false);
+    this.signedIn(); this.tab = 'services';
+    this.notice = 'Sua barbearia foi criada. Cadastre os serviços, os profissionais e a jornada; depois publique em Configurações.';
+  }
+
+  goDirectory(): void {
+    if (this.auth.token) this.auth.logout().subscribe({ error: () => {} });
+    this.auth.clear(); this.resetShopData(); this.shopContext.clear(); this.manageToken = '';
+    this.loadingShop = false; this.shopError = '';
+    this.tab = 'entry'; history.replaceState(null, '', window.location.pathname);
+  }
+
+  private resetShopData(): void {
+    ++this.publicRequest; ++this.adminRequest; ++this.agendaRequest; ++this.manualRequest; ++this.availabilityRequest;
+    this.services = []; this.professionals = []; this.appointments = []; this.blocks = []; this.effectiveHours = [];
+    this.slots = []; this.manualSlots = []; this.manualSlot = null; this.selectedSlot = null; this.confirmed = null;
+    this.activeProfessionalId = 0; this.agendaProfessionalId = 0; this.rescheduleId = 0; this.saving = false;
+    this.loadingAgenda = false; this.loadingSlots = false; this.loadingServices = this.loadingProfessionals = true;
+    this.booking = { service_id: 0, professional_id: 0, day: this.today, customer_name: '', customer_phone: '', customer_email: '' };
+    this.manualForm = { service_id: 0, professional_id: 0, day: this.today, customer_name: '', customer_phone: '' };
+    this.blockForm.professional_id = 0; this.manageToken = ''; this.clearMessages();
   }
 
   setTab(tab: Tab): void {
-    if (tab !== 'entry' && tab !== 'booking' && tab !== 'reservation' && !this.auth.user()) { this.tab = 'entry'; this.error = 'Entre com seu usuário e senha para abrir a área interna.'; return; }
+    if (tab !== 'entry' && tab !== 'booking' && tab !== 'reservation' && tab !== 'team' && !this.auth.user()) { this.tab = 'team'; this.error = 'Entre com seu usuário e senha para abrir a área interna.'; return; }
     if (['services', 'professionals', 'settings'].includes(tab) && !this.auth.canManage) return;
     if (['customers', 'dashboard', 'finance'].includes(tab) && !this.auth.canFinance) return;
-    if (tab !== 'reservation' && this.manageToken) { this.manageToken = ''; history.replaceState(null, '', window.location.pathname); }
+    if (tab !== 'reservation' && this.manageToken) { this.manageToken = ''; history.replaceState(null, '', window.location.pathname + '#shop=' + this.shopContext.id); }
     this.tab = tab;
     this.clearMessages();
-    if (tab !== 'booking' && tab !== 'entry' && this.activeProfessionalId) this.loadAdmin();
+    if (tab !== 'booking' && tab !== 'entry' && tab !== 'team' && this.activeProfessionalId) this.loadAdmin();
   }
 
   signedIn(): void {
@@ -156,12 +227,14 @@ export class AppComponent implements OnInit {
   clearMessages(): void { this.notice = ''; this.error = ''; }
 
   loadPublic(): void {
+    const request = ++this.publicRequest;
     this.api.publicServices().subscribe({
-      next: services => { this.services = services; this.loadingServices = false; },
+      next: services => { if (request !== this.publicRequest) return; this.services = services; this.loadingServices = false; },
       error: error => { this.loadingServices = false; this.error = apiError(error); },
     });
     this.api.publicProfessionals().subscribe({
       next: professionals => {
+        if (request !== this.publicRequest) return;
         this.loadingProfessionals = false;
         this.professionals = professionals;
         if (this.activeProfessionalId > 0 && !professionals.some(p => p.id === this.activeProfessionalId))
@@ -173,12 +246,16 @@ export class AppComponent implements OnInit {
   }
 
   loadAdmin(): void {
+    const request = ++this.adminRequest;
+    ++this.publicRequest;
     this.api.services().subscribe({
-      next: services => this.services = services,
+      next: services => { if (request === this.adminRequest) { this.services = services; this.loadingServices = false; } },
       error: error => this.error = apiError(error),
     });
     this.api.professionals().subscribe({
       next: professionals => {
+        if (request !== this.adminRequest) return;
+        this.loadingProfessionals = false;
         this.professionals = professionals;
         if (this.activeProfessionalId > 0 && !professionals.some(p => p.id === this.activeProfessionalId && p.active))
           this.switchProfessional();
@@ -269,15 +346,18 @@ export class AppComponent implements OnInit {
   }
 
   changeStatus(appointment: Appointment, status: AppointmentStatus): void {
+    const shopId = this.shopContext.id;
     this.saving = true;
     this.clearMessages();
     this.api.updateStatus(appointment.id, status).subscribe({
       next: updated => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.notice = `Atendimento #${updated.id}: ${this.statusLabel(updated.status).toLowerCase()}.`;
         this.loadAppointments();
           },
-      error: error => { this.saving = false; this.error = apiError(error); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); },
     });
   }
 
@@ -289,6 +369,7 @@ export class AppComponent implements OnInit {
   }
 
   saveReschedule(): void {
+    const shopId = this.shopContext.id;
     if (this.saving) return;
     if (!this.rescheduleId || !this.rescheduleForm.professional_id || !this.rescheduleForm.day || !this.rescheduleForm.time) {
       this.error = 'Informe a nova data, o horário e o profissional.';
@@ -301,17 +382,20 @@ export class AppComponent implements OnInit {
       starts_at: this.localDateTime(this.rescheduleForm.day, this.rescheduleForm.time),
     }).subscribe({
       next: updated => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.rescheduleId = 0;
         this.agendaDay = updated.starts_at.slice(0, 10);
         this.notice = `Agendamento #${updated.id} reagendado para ${this.formatDay(updated.starts_at)} às ${this.formatTime(updated.starts_at)}.`;
         this.loadAppointments();
       },
-      error: error => { this.saving = false; this.error = apiError(error); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); },
     });
   }
 
   saveBlock(): void {
+    const shopId = this.shopContext.id;
     if (this.saving) return;
     const form = this.blockForm;
     if (!form.professional_id || !form.day || !form.starts_at || !form.ends_at) {
@@ -328,22 +412,27 @@ export class AppComponent implements OnInit {
       starts_at: this.localDateTime(form.day, form.starts_at),
       ends_at: this.localDateTime(form.day, form.ends_at), reason: form.reason }).subscribe({
       next: () => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.agendaDay = form.day;
         this.blockForm.reason = '';
         this.notice = 'Horário bloqueado.';
         this.loadAppointments();
       },
-      error: error => { this.saving = false; this.error = apiError(error); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); },
     });
   }
 
   removeBlock(block: ScheduleBlock): void {
+    const shopId = this.shopContext.id;
     this.saving = true;
     this.clearMessages();
     this.api.deleteBlock(block.id).subscribe({
-      next: () => { this.saving = false; this.notice = 'Bloqueio removido.'; this.loadAppointments(); },
-      error: error => { this.saving = false; this.error = apiError(error); },
+      next: () => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.notice = 'Bloqueio removido.'; this.loadAppointments(); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); },
     });
   }
 
@@ -365,6 +454,7 @@ export class AppComponent implements OnInit {
   }
 
   saveManualBooking(): void {
+    const shopId = this.shopContext.id;
     if (this.saving) return;
     if (!this.manualSlot || !this.manualForm.customer_name.trim() || !this.manualForm.customer_phone.trim()) {
       this.error = 'Escolha um horário e informe nome e telefone.';
@@ -377,6 +467,7 @@ export class AppComponent implements OnInit {
       starts_at: this.manualSlot.starts_at, customer_name: this.manualForm.customer_name,
       customer_phone: this.manualForm.customer_phone }).subscribe({
       next: updated => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.agendaDay = updated.starts_at.slice(0, 10);
         this.manualForm.customer_name = '';
@@ -385,7 +476,8 @@ export class AppComponent implements OnInit {
         this.notice = `Agendamento #${updated.id} criado.`;
         this.loadAppointments();
       },
-      error: error => { this.saving = false; this.error = apiError(error); this.loadManualSlots(); this.error = apiError(error); },
+      error: error => {
+        if (this.shopContext.id !== shopId) return; this.saving = false; this.error = apiError(error); this.loadManualSlots(); this.error = apiError(error); },
     });
   }
 
@@ -452,6 +544,7 @@ export class AppComponent implements OnInit {
   }
 
   confirmBooking(): void {
+    const shopId = this.shopContext.id;
     if (this.saving || this.confirmed) return;
     if (!this.selectedSlot || !this.booking.customer_name.trim() || !this.booking.customer_phone.trim()) {
       this.error = 'Escolha um horário e informe nome e telefone.';
@@ -469,6 +562,7 @@ export class AppComponent implements OnInit {
       customer_email: this.booking.customer_email.trim() || null,
     }).subscribe({
       next: appointment => {
+        if (this.shopContext.id !== shopId) return;
         this.confirmed = appointment;
         this.selectedSlot = null;
         this.saving = false;
@@ -478,6 +572,7 @@ export class AppComponent implements OnInit {
         this.notice = `Agendamento #${appointment.id} confirmado.`;
       },
       error: error => {
+        if (this.shopContext.id !== shopId) return;
         this.saving = false;
         this.error = apiError(error);
         this.onBookingChange();
@@ -486,7 +581,7 @@ export class AppComponent implements OnInit {
     });
   }
 
-  reservationLink(): string { return this.confirmed?.manage_token ? window.location.origin + window.location.pathname + '#reservation=' + encodeURIComponent(this.confirmed.manage_token) : ''; }
+  reservationLink(): string { return this.confirmed?.manage_token ? window.location.origin + window.location.pathname + '#shop=' + this.shopContext.id + '&reservation=' + encodeURIComponent(this.confirmed.manage_token) : ''; }
   openPayment(appointment: Appointment): void { this.paymentAppointmentId = appointment.id; this.setTab('finance'); }
   selectGridAppointment(appointment: Appointment): void {
     this.agendaLayout = 'list';

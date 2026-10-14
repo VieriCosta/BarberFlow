@@ -1,8 +1,12 @@
+@if (loadingShop) { <div class="shop-loading" role="status">Abrindo sua barbearia…</div> } @else if (!shopContext.shop()) {
+  @if (shopError) { <div class="alert error" role="alert">{{ shopError }}</div> }
+  <app-directory (chosen)="chooseShop($event)" (registered)="shopRegistered($event)" (teamChosen)="chooseShop($event, true)" />
+} @else {
 <div class="app-shell">
   <aside class="sidebar">
     <div class="brand" aria-label="BarberFlow">
       <span class="brand-mark" aria-hidden="true"><span class="brand-mark-cut"></span>BF</span>
-      <div class="brand-name"><strong>barber<span>flow</span></strong><small>STUDIO SYSTEM / 01</small></div>
+      <div class="brand-name"><strong>barber<span>flow</span></strong><small>{{ shopContext.shop()?.name }}</small></div>
     </div>
 
     <div class="nav-group">
@@ -10,6 +14,8 @@
       <nav aria-label="Navegação principal">
         <button type="button" [class.active]="tab === 'entry'" [attr.aria-current]="tab === 'entry' ? 'page' : null" (click)="setTab('entry')"><span class="nav-index">00</span><span>Início</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
         <button type="button" [class.active]="tab === 'booking'" [attr.aria-current]="tab === 'booking' ? 'page' : null" (click)="setTab('booking')"><span class="nav-index">01</span><span>Agendar horário</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
+        <button type="button" [class.active]="tab === 'team'" (click)="setTab('team')"><span class="nav-index">↗</span><span>Sou da equipe</span></button>
+        <button type="button" (click)="goDirectory()"><span class="nav-index">←</span><span>Trocar barbearia</span></button>
         @if (auth.user()) {
         <button type="button" [class.active]="tab === 'agenda'" [attr.aria-current]="tab === 'agenda' ? 'page' : null" (click)="setTab('agenda')"><span class="nav-index">02</span><span>Agenda</span><span class="nav-arrow" aria-hidden="true">↗</span></button>
         @if (auth.canManage) {
@@ -39,26 +45,22 @@
       @if (error) { <div class="alert error" role="alert"><span class="alert-symbol">!</span><span>{{ error }}</span><button type="button" (click)="error = ''" aria-label="Fechar aviso">×</button></div> }
       @if (notice) { <div class="alert success" role="status"><span class="alert-symbol">✓</span><span>{{ notice }}</span><button type="button" (click)="notice = ''" aria-label="Fechar aviso">×</button></div> }
 
-      @if (tab === 'reservation') { <app-reservation [token]="manageToken" [today]="today" /> } @else if (tab === 'entry') {
-        <div class="page-enter entry-page">
-          <section class="entry-hero"><div class="hero-grain" aria-hidden="true"></div><span class="hero-kicker"><span class="kicker-line"></span> BARBERFLOW / BEM-VINDO</span><h1>O seu lugar<br><em>começa aqui.</em></h1><p>Agende seu horário ou entre na barbearia como profissional.</p><span class="entry-hero-mark" aria-hidden="true">✳</span></section>
-          <div class="entry-grid">
-            <section class="card entry-card customer-entry"><span class="mini-label">01 / CLIENTE</span><h2>Reserve seu momento.</h2><p>Escolha o serviço, o barbeiro e o horário que combina com você.</p><button type="button" class="primary-button" (click)="setTab('booking')"><span>Agendar horário</span><span class="button-arrow">↗</span></button></section>
-            <section class="card entry-card team-entry-card">
-              @if (auth.user()) { <h2>Ol?, {{ auth.user()?.name }}</h2><button type="button" class="primary-button" (click)="setTab('agenda')">Abrir agenda</button><button type="button" class="text-button" (click)="logout()">Sair</button> }
-              @else { <app-login (signedIn)="signedIn()" /> }
-
-            </section>
-          </div>
-        </div>
+      @if (auth.canManage && !shopContext.shop()?.published) { <div class="alert success" role="status"><span>Sua barbearia está em configuração. Prepare o catálogo e a jornada; depois publique em Configurações.</span><button type="button" (click)="setTab('settings')">Configurar</button></div> }
+      @if (tab === 'reservation') { <app-reservation [token]="manageToken" [today]="today" /> } @else if (tab === 'team') {
+        <section class="card entry-card team-entry-card shop-team-login"><span class="mini-label">ACESSO DA EQUIPE</span><p>{{ shopContext.shop()?.name }}</p>
+          @if (auth.user()) { <h2>Olá, {{ auth.user()?.name }}</h2><button type="button" class="primary-button" (click)="setTab('agenda')">Abrir agenda</button><button type="button" class="text-button" (click)="logout()">Sair</button> }
+          @else { <app-login (signedIn)="signedIn()" /> }
+        </section>
+      } @else if (tab === 'entry') {
+        <div class="page-enter entry-page"><section class="entry-hero"><span class="hero-kicker">SEU LUGAR / SEU ESTILO</span><h1>{{ shopContext.shop()?.name }}</h1><p>{{ shopContext.shop()?.description }}</p><p>{{ shopContext.shop()?.city }} · {{ shopContext.shop()?.address }}</p><button type="button" class="primary-button" (click)="setTab('booking')">Ver serviços e horários ↗</button></section></div>
       } @else if (tab === 'booking') {
         <div class="page-enter">
           <section class="hero" aria-labelledby="booking-title">
             <div class="hero-grain" aria-hidden="true"></div>
             <div class="hero-copy">
-              <div class="hero-kicker"><span class="kicker-line"></span> BARBEARIA NO SEU RITMO</div>
+              <div class="hero-kicker"><span class="kicker-line"></span> {{ shopContext.shop()?.name }}</div>
               <h1 id="booking-title">O seu tempo.<br><em>O seu estilo.</em></h1>
-              <p>Escolha o ritual, encontre seu momento e deixe o resto com a gente.</p>
+              <p>{{ shopContext.shop()?.description || 'Escolha seu serviço e encontre o melhor horário para você.' }}</p>
               <div class="hero-footer"><span>AGENDAMENTO ONLINE</span><span class="hero-footer-line"></span><span>01 / 03</span></div>
             </div>
             <div class="hero-art" aria-hidden="true">
@@ -122,7 +124,8 @@
                 <label class="field">Seu nome<input type="text" autocomplete="name" placeholder="Como podemos chamar você?" maxlength="120" [(ngModel)]="booking.customer_name"></label>
                 <label class="field">Telefone com DDD<input type="tel" autocomplete="tel" placeholder="(85) 99999-9999" [(ngModel)]="booking.customer_phone"></label>
               </div>
-              <button type="button" class="primary-button" [disabled]="saving || !selectedSlot" (click)="confirmBooking()"><span>{{ saving ? 'Confirmando...' : 'Confirmar agendamento' }}</span><span class="button-arrow" aria-hidden="true">↗</span></button>
+              @if (!shopContext.shop()?.published) { <p class="hint">Esta barbearia ainda está preparando sua agenda.</p> }
+              <button type="button" class="primary-button" [disabled]="saving || !selectedSlot || !shopContext.shop()?.published" (click)="confirmBooking()"><span>{{ saving ? 'Confirmando...' : 'Confirmar agendamento' }}</span><span class="button-arrow" aria-hidden="true">↗</span></button>
               }
             </section>
 
@@ -185,3 +188,5 @@
     </div>
   </main>
 </div>
+
+}

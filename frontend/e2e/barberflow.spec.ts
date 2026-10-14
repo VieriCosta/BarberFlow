@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 
 async function login(page: Page, username: string) {
-  await page.goto('/');
+  await page.goto('/#shop=1&team=1');
   await page.getByLabel('Usuário', { exact: true }).fill(username);
   await page.getByLabel('Senha', { exact: true }).fill('e2e-password-123');
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
@@ -10,6 +10,7 @@ async function login(page: Page, username: string) {
 
 test('customer books and cancels through a protected link', async ({ page }) => {
   await page.goto('/');
+  await page.getByRole('button', { name: /^Escolher / }).first().click();
   await page.getByRole('button', { name: 'Agendar horário' }).first().click();
   const service = page.getByLabel('Serviço', { exact: true });
   await expect(service.locator('option').filter({ hasText: 'Corte clássico (Demo)' })).toHaveCount(1);
@@ -24,7 +25,7 @@ test('customer books and cancels through a protected link', async ({ page }) => 
   await page.getByRole('button', { name: 'Confirmar agendamento' }).click();
   await expect(page.getByRole('heading', { name: 'Seu horário está confirmado.' })).toBeVisible();
   const link = await page.getByRole('link', { name: 'Consultar, cancelar ou reagendar minha reserva' }).getAttribute('href');
-  expect(link).toContain('#reservation=');
+  expect(link).toContain('#shop=1&reservation=');
   await page.goto(link!);
   await expect(page.getByRole('heading', { name: 'Sua reserva' })).toBeVisible();
   await page.getByRole('button', { name: 'Escolher novo horário' }).click();
@@ -52,6 +53,7 @@ test('administrator accesses dashboard, finance and settings without layout over
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth+1)).toBeTruthy();
   await page.screenshot({ path: test.info().outputPath('settings.png'), fullPage: true });
   await page.getByRole('button', { name: 'Sair', exact: true }).click();
+  await page.getByRole('button', { name: /Sou da equipe/ }).click();
   await expect(page.getByLabel('Senha', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Configurações', exact: true })).toHaveCount(0);
 });
@@ -127,4 +129,52 @@ test('catalog component preserves service editing and customer history', async (
   await section.getByRole('button').filter({ hasText: 'Pedro Lima (Demo)' }).click();
   await expect(section.getByText('HISTÓRICO / ATENDIMENTOS')).toBeVisible();
   await expect(section.locator('.appointment')).not.toHaveCount(0);
+});
+
+test('customer-first directory and owner onboarding publish an independent shop', async ({ page }, info) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Seu próximo corte começa aqui.' })).toBeVisible();
+  await expect(page.locator('app-login')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Quer colocar sua barbearia no ar?' })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('directory.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Cadastrar minha barbearia' }).click();
+  const name = 'Nova Barbearia '+info.project.name;
+  await page.getByLabel('Nome da barbearia').fill(name);
+  await page.getByLabel('Cidade', { exact: true }).fill('Fortaleza');
+  await page.getByLabel('Telefone com DDD', { exact: true }).fill('85999998888');
+  await page.getByLabel('Endereço', { exact: true }).fill('Rua dos Cortes, 100');
+  await page.getByLabel('Seu nome', { exact: true }).fill('Dono da Barbearia');
+  await page.getByLabel('Usuário', { exact: true }).fill('admin');
+  await page.getByLabel('Senha', { exact: true }).fill('new-shop-password-123');
+  await page.getByRole('button', { name: 'Criar minha barbearia' }).click();
+  await expect(page.locator('app-catalog')).toBeVisible();
+  await expect(page.getByText('O catálogo começa aqui', { exact: true })).toBeVisible();
+  const catalog = page.locator('app-catalog');
+  await catalog.getByLabel('Nome', { exact: true }).fill('Corte da nova barbearia');
+  await catalog.getByLabel('Preço (R$)').fill('45');
+  await catalog.getByRole('button', { name: 'Cadastrar serviço' }).click();
+  await expect(catalog.getByText('Corte da nova barbearia', { exact: true })).toBeVisible();
+  await page.locator('nav').getByRole('button', { name: /Profissionais/ }).click();
+  await catalog.getByLabel('Nome', { exact: true }).fill('Barbeiro da nova barbearia');
+  await catalog.getByRole('checkbox', { name: 'Corte da nova barbearia' }).check();
+  await catalog.getByRole('button', { name: 'Cadastrar profissional' }).click();
+  await expect(catalog.getByText('Barbeiro da nova barbearia', { exact: true }).first()).toBeVisible();
+  await catalog.getByRole('button', { name: 'Usar horário padrão' }).click();
+  await catalog.getByRole('button', { name: /Salvar jornada/ }).click();
+  await expect(catalog.getByText('Jornada salva.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Configurações', exact: true }).click();
+  const profile = page.locator('app-shop-profile');
+  await profile.getByRole('checkbox', { name: 'Publicar minha barbearia na lista dos clientes' }).check();
+  await profile.getByRole('button', { name: 'Salvar dados da barbearia' }).click();
+  await expect(profile.getByText('Sua barbearia está no ar!', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: /Trocar barbearia/ }).click();
+  await expect(page.getByRole('button', { name: 'Escolher '+name, exact: true })).toBeVisible();
+  await page.getByLabel('Buscar por nome ou cidade').fill(name);
+  await page.getByRole('button', { name: 'Buscar', exact: false }).click();
+  await expect(page.getByRole('button', { name: /^Escolher / })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Escolher '+name, exact: true }).click();
+  const service = page.getByLabel('Serviço', { exact: true });
+  await expect(service.locator('option').filter({ hasText: 'Corte da nova barbearia' })).toHaveCount(1);
+  await expect(service.locator('option').filter({ hasText: '(Demo)' })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth+1)).toBeTruthy();
 });

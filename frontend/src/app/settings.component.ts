@@ -4,8 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { AuthService, User, UserInput } from './auth.service';
 import { ManagementService, NotificationItem, ScheduleException } from './management.service';
 import { Professional, apiError } from './api.service';
+import { ShopProfileComponent } from './shop-profile.component';
 
-@Component({ changeDetection: ChangeDetectionStrategy.Eager, selector: 'app-settings', standalone: true, imports: [CommonModule, FormsModule], styleUrl: './management.css', template: `
+@Component({ changeDetection: ChangeDetectionStrategy.Eager, selector: 'app-settings', standalone: true, imports: [CommonModule, FormsModule, ShopProfileComponent], styleUrl: './management.css', template: `
+  <app-shop-profile />
   @if (error) { <p role="alert" class="message error">{{ error }}</p> } @if (notice) { <p role="status" class="message">{{ notice }}</p> }
   <section class="panel"><h2>Usuários e permissões</h2><p>Administrador gerencia tudo. Recepção cuida dos clientes, agenda e recebimentos. Barbeiro acessa apenas a própria agenda.</p><div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Acesso</th><th>Ações</th></tr></thead><tbody>@for (user of users; track user.id) { <tr><td>{{ user.name }}<small>{{ user.username }}</small></td><td>{{ roleLabel(user.role) }}</td><td>{{ user.active ? 'Ativo' : 'Inativo' }}</td><td><button [disabled]="busy || user.id === auth.user()?.id" (click)="toggle(user)">{{ user.active ? 'Desativar' : 'Ativar' }}</button><button class="secondary" [disabled]="busy" (click)="resetId = user.id; resetPassword = ''">Redefinir senha</button></td></tr> }</tbody></table></div>
     @if (resetId) { <form class="toolbar" (ngSubmit)="reset()"><label>Nova senha (12+ caracteres)<input type="password" name="resetPassword" [(ngModel)]="resetPassword" required minlength="12" maxlength="128" autocomplete="new-password"></label><button [disabled]="busy">Salvar nova senha</button><button type="button" class="secondary" (click)="resetId = 0">Cancelar</button></form> }

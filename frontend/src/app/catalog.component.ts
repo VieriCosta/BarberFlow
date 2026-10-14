@@ -114,12 +114,7 @@ export class CatalogComponent implements OnChanges {
       next: service => {
         this.saving = false;
         this.notice = `Serviço ${service.name} ${this.editingServiceId ? 'atualizado' : 'cadastrado'}.`;
-        const firstSetupService = -1 === -1 && !this.hasActiveProfessionals() && !this.editingServiceId;
         this.cancelServiceEdit();
-        if (firstSetupService) {
-          this.tab = 'professionals';
-          this.notice = `Serviço ${service.name} cadastrado. Agora cadastre o primeiro barbeiro.`;
-        }
         this.loadAdmin();
       },
       error: error => { this.saving = false; this.error = apiError(error); },
