@@ -22,6 +22,10 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def utc(value):
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
     digest = hashlib.scrypt(password.encode(), salt=salt.encode(), n=16384, r=8, p=1).hex()
@@ -44,7 +48,7 @@ def current_user(db: Db, authorization: Annotated[str | None, Header()] = None) 
         raise HTTPException(401, "Entre com seu usuário e senha")
     session = db.get(LoginSession, token_hash(authorization[7:]))
     now = datetime.now(timezone.utc)
-    if session is None or session.expires_at.replace(tzinfo=timezone.utc) <= now:
+    if session is None or utc(session.expires_at) <= now:
         raise HTTPException(401, "Sessão expirada; entre novamente")
     user = db.get(User, session.user_id)
     if user is None or not user.active:
@@ -143,7 +147,7 @@ def login(data: LoginInput, db: Db, request: Request):
         if attempt is None:
             attempt = LoginAttempt(key=key, attempts=0, window_start=now)
             db.add(attempt)
-        if attempt.window_start.replace(tzinfo=timezone.utc) < now-timedelta(minutes=15):
+        if utc(attempt.window_start) < now-timedelta(minutes=15):
             attempt.attempts, attempt.window_start = 0, now
         if attempt.attempts >= 20:
             raise HTTPException(429, "Muitas tentativas; aguarde 15 minutos", headers={"Retry-After": "900"})

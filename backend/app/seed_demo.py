@@ -130,7 +130,7 @@ def seed_demo(db: Session, today: date | None = None) -> dict[str, int]:
         if not available(professional, start, end):
             continue
         db.add(Appointment(service_id=service.id, service_name=service.name,
-                           professional_id=professional.id, customer_name=customer.name,
+                           professional_id=professional.id, customer_id=customer.id, customer_name=customer.name,
                            customer_phone=customer.phone, starts_at=start, ends_at=end,
                            price=service.price, status=status))
         db.flush()

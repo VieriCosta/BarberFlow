@@ -172,6 +172,7 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"), index=True)
     kind: Mapped[str] = mapped_column(String(30))
+    generation: Mapped[str] = mapped_column(String(32), default="")
     state: Mapped[str] = mapped_column(String(20), default="pending")
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     attempts: Mapped[int] = mapped_column(Integer, default=0)

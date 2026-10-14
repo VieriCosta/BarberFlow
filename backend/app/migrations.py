@@ -11,7 +11,7 @@ def migrate(target=engine):
     existing = inspect(target).get_table_names()
     with target.connect() as connection:
         versions = set(connection.execute(text("SELECT version FROM schema_migrations")).scalars()) if "schema_migrations" in existing else set()
-    if 2 not in versions and target.dialect.name == "sqlite" and "appointments" in existing and target.url.database not in (None, ":memory:"):
+    if 3 not in versions and target.dialect.name == "sqlite" and "appointments" in existing and target.url.database not in (None, ":memory:"):
         path = Path(target.url.database).resolve()
         backup = path.with_name(f"{path.stem}.backup-migrate-{datetime.now(timezone.utc):%Y%m%d-%H%M%S-%f}.db")
         with sqlite3.connect(path) as source, sqlite3.connect(backup) as destination:
@@ -38,8 +38,13 @@ def migrate(target=engine):
                 kind = "TIMESTAMP WITH TIME ZONE" if target.dialect.name == "postgresql" else "DATETIME"
                 connection.execute(text(f"ALTER TABLE notifications ADD COLUMN locked_at {kind}"))
             connection.execute(text("INSERT INTO schema_migrations (version) VALUES (2)"))
+        if 3 not in versions:
+            columns = {c["name"] for c in inspect(connection).get_columns("notifications")}
+            if "generation" not in columns:
+                connection.execute(text("ALTER TABLE notifications ADD COLUMN generation VARCHAR(32) NOT NULL DEFAULT ''"))
+            connection.execute(text("INSERT INTO schema_migrations (version) VALUES (3)"))
 
 
 if __name__ == "__main__":
     migrate()
-    print("Banco atualizado: versão 2")
+    print("Banco atualizado: versão 3")
